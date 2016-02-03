@@ -30,7 +30,8 @@
 #define MAXTHREADS 1024
 
 struct statistics {
-    uint64_t bytecnt;
+    uint64_t in_bytecnt;
+    uint64_t out_bytecnt;
 };
 
 struct s_features {
@@ -153,7 +154,7 @@ void *tee(void *arg0) {
         if ((numbytes = recvfrom(td->sockfd, data, BUFLEN-sizeof(struct iphdr)-sizeof(struct udphdr), 0,
             (struct sockaddr *)&their_addr, &addr_len)) == -1) {
             perror("recvfrom");
-            exit(1);
+            continue;
         }
 
         data[numbytes] = '\0';
@@ -171,7 +172,7 @@ void *tee(void *arg0) {
         printf("listener %d: crafting new packet...\n", td->thread_id);
 #endif
 
-        stats->bytecnt += sizeof(struct iphdr) + sizeof(struct udphdr) + numbytes;
+        stats->in_bytecnt += sizeof(struct iphdr) + sizeof(struct udphdr) + numbytes;
 
         update_udp_header(udph, numbytes, ((struct sockaddr_in*)&their_addr)->sin_port, sin.sin_port);
         update_ip_header(iph, sizeof(struct udphdr) + numbytes,
@@ -194,11 +195,17 @@ void *tee(void *arg0) {
 
         if (sendto(ssock, datagram, iph->tot_len, 0, (struct sockaddr *) &sin, sizeof(sin)) < 0) {
             perror("sendto failed");
+            fprintf(stderr, "pktlen: %u\n", iph->tot_len);
+        }
+        else {
+            stats->out_bytecnt += sizeof(struct iphdr) + sizeof(struct udphdr) + numbytes;
         }
     }
 }
 
 void *duplicate(void *arg0) {
+    uint16_t cnt;
+
     struct thread_data *td = (struct thread_data *)arg0;
     struct s_features *features = &(td->features);
     struct statistics *stats = &(td->stats);
@@ -212,7 +219,7 @@ void *duplicate(void *arg0) {
     char datagram[BUFLEN];
     struct iphdr *iph = (struct iphdr *)datagram;
     struct udphdr *udph = (/*u_int8_t*/void *)iph + sizeof(struct iphdr);
-    struct sockaddr_in sin = td->targets[td->thread_id];
+    struct sockaddr_in sin;
 
     memset(datagram, 0, BUFLEN);
     // Set appropriate fields in headers
@@ -230,7 +237,8 @@ void *duplicate(void *arg0) {
         if ((numbytes = recvfrom(td->sockfd, data, BUFLEN-sizeof(struct iphdr)-sizeof(struct udphdr), 0,
             (struct sockaddr *)&their_addr, &addr_len)) == -1) {
             perror("recvfrom");
-            exit(1);
+            //exit(1);
+            continue;
         }
 
         data[numbytes] = '\0';
@@ -248,29 +256,44 @@ void *duplicate(void *arg0) {
         printf("listener %d: crafting new packet...\n", td->thread_id);
 #endif
 
-        stats->bytecnt += sizeof(struct iphdr) + sizeof(struct udphdr) + numbytes;
+        stats->in_bytecnt += sizeof(struct iphdr) + sizeof(struct udphdr) + numbytes;
 
-        update_udp_header(udph, numbytes, ((struct sockaddr_in*)&their_addr)->sin_port, sin.sin_port);
-        update_ip_header(iph, sizeof(struct udphdr) + numbytes,
-                         ((struct sockaddr_in*)&their_addr)->sin_addr.s_addr,
-                         sin.sin_addr.s_addr);
+        // get main output: targets[0]
+        // check whether features->duplicate == 1
+        // if yes, iterate over remaining targets and also send packets to them
+        for (cnt=0; cnt < td->num_targets; cnt++) {
+
+            sin = td->targets[cnt];
+
+            update_udp_header(udph, numbytes, ((struct sockaddr_in*)&their_addr)->sin_port, sin.sin_port);
+            update_ip_header(iph, sizeof(struct udphdr) + numbytes,
+                            ((struct sockaddr_in*)&their_addr)->sin_addr.s_addr,
+                            sin.sin_addr.s_addr);
 
 #ifdef DEBUG
-        printf("listener %d: sending packet: %s:%u => %s:%u: len: %u\n",
-            td->thread_id,
-            inet_ntop(AF_INET,
-                (struct sockaddr_in *)&(iph->saddr),
-                addrbuf0, sizeof(addrbuf0)),
-            ntohs(udph->source),
-            inet_ntop(AF_INET,
-                (struct sockaddr_in *)&(iph->daddr),
-                addrbuf1, sizeof(addrbuf1)),
-            ntohs(udph->dest),
-            iph->tot_len);
+            printf("listener %d: sending packet: %s:%u => %s:%u: len: %u\n",
+                td->thread_id,
+                inet_ntop(AF_INET,
+                    (struct sockaddr_in *)&(iph->saddr),
+                    addrbuf0, sizeof(addrbuf0)),
+                ntohs(udph->source),
+                inet_ntop(AF_INET,
+                    (struct sockaddr_in *)&(iph->daddr),
+                    addrbuf1, sizeof(addrbuf1)),
+                ntohs(udph->dest),
+                iph->tot_len);
 #endif
 
-        if (sendto(ssock, datagram, iph->tot_len, 0, (struct sockaddr *) &sin, sizeof(sin)) < 0) {
-            perror("sendto failed");
+            if (sendto(ssock, datagram, iph->tot_len, 0, (struct sockaddr *) &sin, sizeof(sin)) < 0) {
+                perror("sendto failed");
+                fprintf(stderr, "pktlen: %u\n", iph->tot_len);
+            }
+            else {
+                stats->out_bytecnt += sizeof(struct iphdr) + sizeof(struct udphdr) + numbytes;
+            }
+
+            if (!(features->duplicate))
+                break;
         }
     }
 }
@@ -433,6 +456,7 @@ int main(int argc, char *argv[]) {
             break;
             case 'd':
                 tds[cnt].features.duplicate = 1;
+                optional_output_enabled = 1;
             break;
         }
     }
@@ -470,18 +494,21 @@ int main(int argc, char *argv[]) {
 #endif
 
     // main thread is the 'extra' stats-thread. use it to catch/handle signals
-    fprintf(stdout, "#ts\tlistener\tbytecnt\n");
+    fprintf(stdout, "#ts\tlistener\tin_bytecnt\tout_bytecnt\n");
     while (1) {
         if (reset_stats) {
             for (cnt = 0; cnt < num_threads; cnt++) {
-                tds[cnt].stats.bytecnt = 0;
+                tds[cnt].stats.in_bytecnt = 0;
+                tds[cnt].stats.out_bytecnt = 0;
             }
             reset_stats = 0;
         }
         if (stats_enabled) {
             now = time(0);
             for (cnt = 0; cnt < num_threads; cnt++) {
-                fprintf(stdout, "%u\t%u\t%u\n", now, cnt, tds[cnt].stats.bytecnt);
+                fprintf(stdout, "%u\t%u\t%u\t%u\n", now, cnt,
+                        tds[cnt].stats.in_bytecnt,
+                        tds[cnt].stats.out_bytecnt);
             }
         }
 
