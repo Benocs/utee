@@ -9,8 +9,6 @@
  *  * http://beej.us/guide/bgnet/
  */
 
-// #define DEBUG
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -123,8 +121,84 @@ void setup_udp_header(struct udphdr *udph, uint16_t udp_payload_len,
     update_udp_header(udph, udp_payload_len, source, dest);
 }
 
-void *tee(void *arg0)
-{
+void *tee(void *arg0) {
+    struct thread_data *td = (struct thread_data *)arg0;
+    struct s_features *features = &(td->features);
+    struct statistics *stats = &(td->stats);
+
+    // incoming packets
+    int numbytes = 0;
+    struct sockaddr_storage their_addr;
+    socklen_t addr_len = sizeof(their_addr);
+
+    // outgoing packets
+    char datagram[BUFLEN];
+    struct iphdr *iph = (struct iphdr *)datagram;
+    struct udphdr *udph = (/*u_int8_t*/void *)iph + sizeof(struct iphdr);
+    struct sockaddr_in sin = td->targets[td->thread_id];
+
+    memset(datagram, 0, BUFLEN);
+    // Set appropriate fields in headers
+    setup_ip_header(iph, 0, 0, 0);
+    setup_udp_header(udph, 0, 0, 0);
+    char *data = (char *)udph + sizeof(struct udphdr);
+
+    int ssock = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
+    if(ssock < 0){
+        fprintf(stderr, "Could not open raw socket.\n");
+        exit(1);
+    }
+
+    while (1) {
+        if ((numbytes = recvfrom(td->sockfd, data, BUFLEN-sizeof(struct iphdr)-sizeof(struct udphdr), 0,
+            (struct sockaddr *)&their_addr, &addr_len)) == -1) {
+            perror("recvfrom");
+            exit(1);
+        }
+
+        data[numbytes] = '\0';
+
+#ifdef DEBUG
+        char addrbuf0[INET6_ADDRSTRLEN];
+        char addrbuf1[INET6_ADDRSTRLEN];
+        printf("listener %d: got packet from %s\n",
+            td->thread_id,
+            inet_ntop(their_addr.ss_family,
+                get_in_addr((struct sockaddr *)&their_addr),
+                addrbuf0, sizeof(addrbuf0)));
+        printf("listener %d: packet is %d bytes long\n", td->thread_id, numbytes);
+        printf("listener %d: packet contains \"%s\"\n", td->thread_id, data);
+        printf("listener %d: crafting new packet...\n", td->thread_id);
+#endif
+
+        stats->bytecnt += sizeof(struct iphdr) + sizeof(struct udphdr) + numbytes;
+
+        update_udp_header(udph, numbytes, ((struct sockaddr_in*)&their_addr)->sin_port, sin.sin_port);
+        update_ip_header(iph, sizeof(struct udphdr) + numbytes,
+                         ((struct sockaddr_in*)&their_addr)->sin_addr.s_addr,
+                         sin.sin_addr.s_addr);
+
+#ifdef DEBUG
+        printf("listener %d: sending packet: %s:%u => %s:%u: len: %u\n",
+            td->thread_id,
+            inet_ntop(AF_INET,
+                (struct sockaddr_in *)&(iph->saddr),
+                addrbuf0, sizeof(addrbuf0)),
+            ntohs(udph->source),
+            inet_ntop(AF_INET,
+                (struct sockaddr_in *)&(iph->daddr),
+                addrbuf1, sizeof(addrbuf1)),
+            ntohs(udph->dest),
+            iph->tot_len);
+#endif
+
+        if (sendto(ssock, datagram, iph->tot_len, 0, (struct sockaddr *) &sin, sizeof(sin)) < 0) {
+            perror("sendto failed");
+        }
+    }
+}
+
+void *duplicate(void *arg0) {
     struct thread_data *td = (struct thread_data *)arg0;
     struct s_features *features = &(td->features);
     struct statistics *stats = &(td->stats);
@@ -319,7 +393,7 @@ int main(int argc, char *argv[]) {
                 case 'd':
                     mode = 'd';
 #ifdef DEBUG
-                    fprintf(stdout, "mode: duplcicate\n");
+                    fprintf(stdout, "mode: duplicate\n");
 #endif
                 break;
                 default:
@@ -381,7 +455,14 @@ int main(int argc, char *argv[]) {
 
     // this one loops over all threads and starts them
     for (cnt = 0; cnt < num_threads; cnt++) {
-        pthread_create(&thread[cnt], NULL, &tee, (void *) &tds[cnt]);
+        switch (mode) {
+            case 'r':
+                pthread_create(&thread[cnt], NULL, &tee, (void *) &tds[cnt]);
+            break;
+            case 'd':
+                pthread_create(&thread[cnt], NULL, &duplicate, (void *) &tds[cnt]);
+            break;
+        }
     }
 
 #ifdef DEBUG
