@@ -162,14 +162,14 @@ void *tee(void *arg0) {
 #ifdef DEBUG
         char addrbuf0[INET6_ADDRSTRLEN];
         char addrbuf1[INET6_ADDRSTRLEN];
-        printf("listener %d: got packet from %s\n",
+        fprintf(stderr, "listener %d: got packet from %s\n",
             td->thread_id,
             inet_ntop(their_addr.ss_family,
                 get_in_addr((struct sockaddr *)&their_addr),
                 addrbuf0, sizeof(addrbuf0)));
-        printf("listener %d: packet is %d bytes long\n", td->thread_id, numbytes);
-        printf("listener %d: packet contains \"%s\"\n", td->thread_id, data);
-        printf("listener %d: crafting new packet...\n", td->thread_id);
+        fprintf(stderr, "listener %d: packet is %d bytes long\n", td->thread_id, numbytes);
+        fprintf(stderr, "listener %d: packet contains \"%s\"\n", td->thread_id, data);
+        fprintf(stderr, "listener %d: crafting new packet...\n", td->thread_id);
 #endif
 
         stats->in_bytecnt += sizeof(struct iphdr) + sizeof(struct udphdr) + numbytes;
@@ -180,7 +180,7 @@ void *tee(void *arg0) {
                          sin.sin_addr.s_addr);
 
 #ifdef DEBUG
-        printf("listener %d: sending packet: %s:%u => %s:%u: len: %u\n",
+        printf(stderr, "listener %d: sending packet: %s:%u => %s:%u: len: %u\n",
             td->thread_id,
             inet_ntop(AF_INET,
                 (struct sockaddr_in *)&(iph->saddr),
@@ -246,14 +246,14 @@ void *duplicate(void *arg0) {
 #ifdef DEBUG
         char addrbuf0[INET6_ADDRSTRLEN];
         char addrbuf1[INET6_ADDRSTRLEN];
-        printf("listener %d: got packet from %s\n",
+        fprintf(stderr, "listener %d: got packet from %s\n",
             td->thread_id,
             inet_ntop(their_addr.ss_family,
                 get_in_addr((struct sockaddr *)&their_addr),
                 addrbuf0, sizeof(addrbuf0)));
-        printf("listener %d: packet is %d bytes long\n", td->thread_id, numbytes);
-        printf("listener %d: packet contains \"%s\"\n", td->thread_id, data);
-        printf("listener %d: crafting new packet...\n", td->thread_id);
+        fprintf(stderr, "listener %d: packet is %d bytes long\n", td->thread_id, numbytes);
+        fprintf(stderr, "listener %d: packet contains \"%s\"\n", td->thread_id, data);
+        fprintf(stderr, "listener %d: crafting new packet...\n", td->thread_id);
 #endif
 
         stats->in_bytecnt += sizeof(struct iphdr) + sizeof(struct udphdr) + numbytes;
@@ -271,7 +271,7 @@ void *duplicate(void *arg0) {
                             sin.sin_addr.s_addr);
 
 #ifdef DEBUG
-            printf("listener %d: sending packet: %s:%u => %s:%u: len: %u\n",
+            fprintf(stderr, "listener %d: sending packet: %s:%u => %s:%u: len: %u\n",
                 td->thread_id,
                 inet_ntop(AF_INET,
                     (struct sockaddr_in *)&(iph->saddr),
@@ -396,13 +396,13 @@ int main(int argc, char *argv[]) {
         case 'l':
             split_addr(optarg, listenaddr, &listenport);
 #ifdef DEBUG
-            printf("listen address: %s:%u\n", listenaddr, listenport);
+            fprintf(stderr, "listen address: %s:%u\n", listenaddr, listenport);
 #endif
         break;
         case 'n':
             num_threads = atoi(optarg);
 #ifdef DEBUG
-            printf("number of threads: %u\n", num_threads);
+            fprintf(stderr, "number of threads: %u\n", num_threads);
 #endif
         break;
         case 'm':
@@ -410,19 +410,19 @@ int main(int argc, char *argv[]) {
                 case 'r':
                     mode = 'r';
 #ifdef DEBUG
-                    fprintf(stdout, "mode: round-robin\n");
+                    fprintf(stderr, "mode: round-robin\n");
 #endif
                 break;
                 case 'd':
                     mode = 'd';
 #ifdef DEBUG
-                    fprintf(stdout, "mode: duplicate\n");
+                    fprintf(stderr, "mode: duplicate\n");
 #endif
                 break;
                 default:
                     mode = 255;
 #ifdef DEBUG
-                    fprintf(stdout, "invalid mode 0x%x\n", mode);
+                    fprintf(stderr, "invalid mode 0x%x\n", mode);
 #endif
                     usage(argc, argv);
                 break;
@@ -439,7 +439,7 @@ int main(int argc, char *argv[]) {
     signal(SIGUSR2, sig_handler_toggle_optional_output);
 
 #ifdef DEBUG
-    fprintf(stdout, "setting up listener socket...\n");
+    fprintf(stderr, "setting up listener socket...\n");
 #endif
     lsock = open_listener_socket(listenaddr, listenport);
 
@@ -473,7 +473,7 @@ int main(int argc, char *argv[]) {
             index = optind;
 
 #ifdef DEBUG
-        fprintf(stdout, "thread %u: relaying to: %s:%u\n", cnt, addrbuf, portbuf);
+        fprintf(stderr, "thread %u: relaying to: %s:%u\n", cnt, addrbuf, portbuf);
 #endif
     }
 
@@ -490,11 +490,11 @@ int main(int argc, char *argv[]) {
     }
 
 #ifdef DEBUG
-    fprintf(stdout, "starting tee...\n");
+    fprintf(stderr, "starting tee...\n");
 #endif
 
     // main thread is the 'extra' stats-thread. use it to catch/handle signals
-    fprintf(stdout, "#ts\tlistener\tin_bytecnt\tout_bytecnt\n");
+    fprintf(stderr, "#ts\tlistener\tin_bytecnt\tout_bytecnt\n");
     while (1) {
         if (reset_stats) {
             for (cnt = 0; cnt < num_threads; cnt++) {
