@@ -157,6 +157,13 @@ void *tee(void *arg0) {
             continue;
         }
 
+        if (numbytes > 1472) {
+#ifdef DEBUG
+            fprintf(stderr, "listener %d: packet is %d bytes long cropping to 1472\n", td->thread_id, numbytes);
+#endif
+            numbytes = 1472;
+        }
+
         data[numbytes] = '\0';
 
 #ifdef DEBUG
@@ -180,7 +187,7 @@ void *tee(void *arg0) {
                          sin.sin_addr.s_addr);
 
 #ifdef DEBUG
-        printf(stderr, "listener %d: sending packet: %s:%u => %s:%u: len: %u\n",
+        fprintf(stderr, "listener %d: sending packet: %s:%u => %s:%u: len: %u\n",
             td->thread_id,
             inet_ntop(AF_INET,
                 (struct sockaddr_in *)&(iph->saddr),
@@ -239,6 +246,13 @@ void *duplicate(void *arg0) {
             perror("recvfrom");
             //exit(1);
             continue;
+        }
+
+        if (numbytes > 1472) {
+#ifdef DEBUG
+            fprintf(stderr, "listener %d: packet is %d bytes long cropping to 1472\n", td->thread_id, numbytes);
+#endif
+            numbytes = 1472;
         }
 
         data[numbytes] = '\0';
