@@ -208,6 +208,14 @@ struct sockaddr_storage* hash_based_output(struct sockaddr_storage *their_addr,
     return (struct sockaddr_storage*)&(td->targets[target]);
 }
 
+struct hashable* ht_get(struct hashable **ht, uint32_t addr) {
+    struct hashable *ht_e;
+
+    HASH_FIND_INT(*ht, &addr, ht_e);
+
+    return ht_e;
+}
+
 struct hashable* ht_get_add(struct hashable **ht, uint32_t addr, struct sockaddr_storage* output,
                   uint8_t overwrite) {
     struct hashable *ht_e;
