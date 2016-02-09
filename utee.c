@@ -208,34 +208,6 @@ struct sockaddr_storage* hash_based_output(struct sockaddr_storage *their_addr,
     return (struct sockaddr_storage*)&(td->targets[target]);
 }
 
-int8_t ht_add(struct hashable **ht, uint32_t addr, struct sockaddr_storage* output) {
-    struct hashable *ht_e;
-
-    HASH_FIND_INT(*ht, &addr, ht_e);
-    if (ht_e == NULL) {
-        if ((ht_e = (struct hashable*)malloc(sizeof(struct hashable))) == NULL) {
-            perror("allocate new hashtable element");
-            return -1;
-        }
-        ht_e->addr = addr;
-        HASH_ADD_INT(*ht, addr, ht_e);
-    }
-    ht_e->output = output;
-
-    return 0;
-}
-
-struct sockaddr_storage* ht_get(struct hashable **ht, uint32_t addr) {
-    struct hashable *ht_e;
-
-    HASH_FIND_INT(*ht, &addr, ht_e);
-    if (ht_e == NULL)
-        return NULL;
-
-    return ht_e->output;
-}
-
-
 struct hashable* ht_get_add(struct hashable **ht, uint32_t addr, struct sockaddr_storage* output,
                   uint8_t overwrite) {
     struct hashable *ht_e;
