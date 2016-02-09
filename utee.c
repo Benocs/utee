@@ -116,15 +116,13 @@ void update_udp_header(struct udphdr *udph, uint16_t udp_payload_len,
 
 void setup_udp_header(struct udphdr *udph, uint16_t udp_payload_len,
                       uint16_t source, uint16_t dest) {
-    // char *data = (char *)udph + sizeof(struct udphdr);
-    // data = replStr("\xFF" "\xFF" "\xFF" "\xFF", 256);
     udph->check = 0;
     update_udp_header(udph, udp_payload_len, source, dest);
 }
 
 void *tee(void *arg0) {
     struct thread_data *td = (struct thread_data *)arg0;
-    struct s_features *features = &(td->features);
+    // TODO: unused: struct s_features *features = &(td->features);
     struct statistics *stats = &(td->stats);
 
     // incoming packets
@@ -359,7 +357,6 @@ uint16_t num_threads = 0;
 struct thread_data tds[MAXTHREADS];
 struct sockaddr_in targets[MAXTHREADS];
 
-
 void sig_handler_toggle_stats(int signum) {
   stats_enabled = (!stats_enabled);
   fprintf(stderr, "toggling stats output: %u\n", stats_enabled);
@@ -424,7 +421,7 @@ int main(int argc, char *argv[]) {
                 case 'r':
                     mode = 'r';
 #ifdef DEBUG
-                    fprintf(stderr, "mode: round-robin\n");
+                    fprintf(stderr, "mode: round-robin distribution\n");
 #endif
                 break;
                 case 'd':
@@ -520,7 +517,9 @@ int main(int argc, char *argv[]) {
         if (stats_enabled) {
             now = time(0);
             for (cnt = 0; cnt < num_threads; cnt++) {
-                fprintf(stdout, "%u\t%u\t%u\t%u\n", now, cnt,
+                fprintf(stdout, "%lu\t%u\t%lu\t%lu\n",
+                        (unsigned long)now,
+                        cnt,
                         tds[cnt].stats.in_bytecnt,
                         tds[cnt].stats.out_bytecnt);
             }
