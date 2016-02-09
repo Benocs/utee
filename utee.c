@@ -2,6 +2,7 @@
  *
  * support for:
  *  * round-robin load-balance
+ *  ** hash-based load-balance
  *  * duplicate/relay
  *
  * based on:
@@ -35,7 +36,9 @@ struct statistics {
 };
 
 struct s_features {
-    uint8_t load_balance;
+    uint8_t distribute;
+    uint8_t load_balanced_dist;
+    uint8_t hash_based_dist;
     uint8_t duplicate;
 };
 
@@ -379,7 +382,9 @@ void sig_handler_toggle_optional_output(int signum) {
 }
 
 void usage(int argc, char *argv[]) {
-    fprintf(stderr, "usage: %s -l <listenaddr:port> -m <r|d> -n <num_threads> <targetaddr:port> [targetaddr:port [...]]\n\tNote: num_threads must be >= number of target addresses", argv[0]);
+    fprintf(stderr, "usage: %s -l <listenaddr:port> -m <r|d> -n <num_threads> "
+                    "[-L] <targetaddr:port> [targetaddr:port [...]]\n"
+                    "\tNote: num_threads must be >= number of target addresses", argv[0]);
     abort();
 }
 
@@ -396,18 +401,33 @@ int main(int argc, char *argv[]) {
 
     unsigned char mode = 0xFF;
 
+    uint8_t loadbalanced_dist_enabled = 0;
+    uint8_t hash_based_dist_enabled = 0;
+
     time_t now;
 
     int index;
     int c;
 
     opterr = 0;
-    while ((c = getopt (argc, argv, "l:m:n:")) != -1)
+    while ((c = getopt (argc, argv, "l:m:n:L")) != -1)
     switch (c) {
         case 'l':
             split_addr(optarg, listenaddr, &listenport);
 #ifdef DEBUG
             fprintf(stderr, "listen address: %s:%u\n", listenaddr, listenport);
+#endif
+        break;
+        case 'H':
+            hash_based_dist_enabled = 1;
+#ifdef DEBUG
+            fprintf(stderr, "use hash-based while distributing\n");
+#endif
+        break;
+        case 'L':
+            loadbalanced_dist_enabled = 1;
+#ifdef DEBUG
+            fprintf(stderr, "use load-balancing while distributing\n");
 #endif
         break;
         case 'n':
@@ -463,10 +483,12 @@ int main(int argc, char *argv[]) {
         tds[cnt].num_targets = argc - optind;
         switch (mode) {
             case 'r':
-                tds[cnt].features.load_balance = 1;
+                tds[cnt].features.distribute = 1;
             break;
             case 'd':
                 tds[cnt].features.duplicate = 1;
+                tds[cnt].features.load_balanced_dist = loadbalanced_dist_enabled;
+                tds[cnt].features.hash_based_dist = hash_based_dist_enabled;
                 optional_output_enabled = 1;
             break;
         }
