@@ -385,7 +385,7 @@ void usage(int argc, char *argv[]) {
     fprintf(stderr, "usage: %s -l <listenaddr:port> -m <r|d> -n <num_threads> "
                     "[-L] <targetaddr:port> [targetaddr:port [...]]\n"
                     "\tNote: num_threads must be >= number of target addresses", argv[0]);
-    abort();
+    exit(1);
 }
 
 int main(int argc, char *argv[]) {
