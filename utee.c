@@ -90,24 +90,24 @@ void *get_in_addr(struct sockaddr *sa) {
 
 void update_ip_header(struct iphdr *iph, uint16_t ip_payload_len,
                       uint32_t saddr, uint32_t daddr) {
-  iph->tot_len = sizeof(struct iphdr) + ip_payload_len;
-  iph->saddr = saddr;
-  iph->daddr = daddr;
+    iph->tot_len = sizeof(struct iphdr) + ip_payload_len;
+    iph->saddr = saddr;
+    iph->daddr = daddr;
 }
 
 void setup_ip_header(struct iphdr *iph, uint16_t ip_payload_len,
                      uint32_t saddr, uint32_t daddr) {
-  iph->ihl = 5;
-  iph->version = 4;
-  iph->tos = 0;
-  iph->id = htonl(54321);
-  iph->frag_off = 0;
-  iph->ttl = MAXTTL;
-  iph->protocol = IPPROTO_UDP;
-  iph->check = 0;
-  // iph->check = csum((unsigned short *) datagram, ntohs(udph->len) >> 1);
+    iph->ihl = 5;
+    iph->version = 4;
+    iph->tos = 0;
+    iph->id = htonl(54321);
+    iph->frag_off = 0;
+    iph->ttl = MAXTTL;
+    iph->protocol = IPPROTO_UDP;
+    iph->check = 0;
+    // iph->check = csum((unsigned short *) datagram, ntohs(udph->len) >> 1);
 
-  update_ip_header(iph, ip_payload_len, saddr, daddr);
+    update_ip_header(iph, ip_payload_len, saddr, daddr);
 }
 
 void update_udp_header(struct udphdr *udph, uint16_t udp_payload_len,
@@ -361,24 +361,24 @@ struct thread_data tds[MAXTHREADS];
 struct sockaddr_in targets[MAXTHREADS];
 
 void sig_handler_toggle_stats(int signum) {
-  stats_enabled = (!stats_enabled);
-  fprintf(stderr, "toggling stats output: %u\n", stats_enabled);
+    stats_enabled = (!stats_enabled);
+    fprintf(stderr, "toggling stats output: %u\n", stats_enabled);
 }
 
 void sig_handler_reset_stats(int signum) {
-  fprintf(stderr, "resetting stats\n");
-  reset_stats = 1;
+    fprintf(stderr, "resetting stats\n");
+    reset_stats = 1;
 }
 
 void sig_handler_toggle_optional_output(int signum) {
-  uint16_t cnt;
+    uint16_t cnt;
 
-  optional_output_enabled = (!optional_output_enabled);
-  fprintf(stderr, "toggling optional output: %u\n", optional_output_enabled);
+    optional_output_enabled = (!optional_output_enabled);
+    fprintf(stderr, "toggling optional output: %u\n", optional_output_enabled);
 
-  for (cnt = 0; cnt < num_threads; cnt++) {
-    tds[cnt].features.duplicate = optional_output_enabled;
-  }
+    for (cnt = 0; cnt < num_threads; cnt++) {
+        tds[cnt].features.duplicate = optional_output_enabled;
+    }
 }
 
 void usage(int argc, char *argv[]) {
