@@ -78,6 +78,13 @@ struct s_features {
     uint8_t duplicate;
 };
 
+struct hashable {
+    // TODO: if there shall be IPv6-support, increase the address space
+    uint32_t addr;
+    uint32_t output;
+    UT_hash_handle hh;
+};
+
 struct thread_data {
     int thread_id;
     int sockfd;
@@ -85,6 +92,7 @@ struct thread_data {
     uint32_t num_targets;
     struct statistics stats;
     struct s_features features;
+    struct hashable* hashtable;
 };
 
 char *myStrCat (char *s, char *a) {
@@ -197,6 +205,33 @@ struct sockaddr_storage* hash_based_output(struct sockaddr_storage *their_addr,
 #endif
 
     return (struct sockaddr_storage*)&(td->targets[target]);
+}
+
+int8_t ht_add(struct hashable **ht, uint32_t addr, uint32_t output) {
+    struct hashable *ht_e;
+
+    HASH_FIND_INT(*ht, &addr, ht_e);
+    if (ht_e == NULL) {
+        if ((ht_e = (struct hashable*)malloc(sizeof(struct hashable))) == NULL) {
+            perror("allocate new hashtable element");
+            return -1;
+        }
+        ht_e->addr = addr;
+        HASH_ADD_INT(*ht, addr, ht_e);
+    }
+    ht_e->output = output;
+
+    return 0;
+}
+
+uint32_t ht_get(struct hashable **ht, uint32_t addr) {
+    struct hashable *ht_e;
+
+    HASH_FIND_INT(*ht, &addr, ht_e);
+    if (ht_e == NULL)
+        return -1;
+
+    return ht_e->output;
 }
 
 void *tee(void *arg0) {
@@ -567,6 +602,7 @@ int main(int argc, char *argv[]) {
         tds[cnt].sockfd = lsock;
         tds[cnt].targets = targets;
         tds[cnt].num_targets = argc - optind;
+        tds[cnt].hashtable = NULL;
         switch (mode) {
             case 'r':
                 tds[cnt].features.distribute = 1;
