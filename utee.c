@@ -27,8 +27,44 @@
 #include <sys/select.h>
 #include <time.h>
 
+#include "uthash.h"
+
 #define BUFLEN 4096
 #define MAXTHREADS 1024
+
+#define HASH_MOD(key, keylen, num_bkts, hashv, bkt)                           \
+do {                                                                          \
+    hashv = *key;                                                             \
+    bkt = (*key) % num_bkts;                                                  \
+} while (0)
+
+#define HASH_BER_MOD(key, keylen, num_bkts, hashv, bkt)                       \
+do {                                                                          \
+    unsigned _hb_keylen=(unsigned)keylen;                                     \
+    const unsigned char *_hb_key=(const unsigned char*)(key);                 \
+    (hashv) = 0;                                                              \
+    while (_hb_keylen-- != 0U) {                                              \
+        (hashv) = 33 * hashv ^ *_hb_key++;                                    \
+    }                                                                         \
+    bkt = (hashv) % (num_bkts);                                               \
+} while (0)
+
+#define HASH_JEN_32(key, keylen, num_bkts, hashv, bkt)                        \
+do {                                                                          \
+    hashv = (*key +0x7ed55d16) + (*key<<12);                                  \
+    hashv = (hashv^0xc761c23c) ^ (hashv>>19);                                 \
+    hashv = (hashv+0x165667b1) + (hashv<<5);                                  \
+    hashv = (hashv+0xd3a2646c) ^ (hashv<<9);                                  \
+    hashv = (hashv+0xfd7046c5) + (hashv<<3);                                  \
+    hashv = (hashv^0xb55a4f09) ^ (hashv>>16);                                 \
+                                                                              \
+    bkt = (hashv) % (num_bkts);                                               \
+} while (0)
+
+// default hashing for IP addresses is to simply mod them by the number of bkts
+#ifndef HASH_ADDR
+#define HASH_ADDR HASH_MOD
+#endif
 
 struct statistics {
     uint64_t in_bytecnt;
@@ -123,9 +159,49 @@ void setup_udp_header(struct udphdr *udph, uint16_t udp_payload_len,
     update_udp_header(udph, udp_payload_len, source, dest);
 }
 
+struct sockaddr_storage* hash_based_output(struct sockaddr_storage *their_addr,
+                                           struct thread_data* td) {
+
+    uint32_t hashvalue = 0;
+    uint32_t target = 0;
+
+    uint32_t tmp = ntohl(((struct sockaddr_in*)their_addr)->sin_addr.s_addr);
+
+    // (key, keylen, num_bkts, hashv, bkt)
+    HASH_ADDR(
+            &tmp,
+            sizeof(tmp),
+            td->num_targets,
+            hashvalue,
+            target
+            );
+
+
+#if defined(DEBUG) || defined(HASH_DEBUG)
+    struct sockaddr_storage *sin;
+
+    sin = (struct sockaddr_storage*)&(td->targets[target]);
+    char addrbuf0[INET6_ADDRSTRLEN];
+    char addrbuf1[INET6_ADDRSTRLEN];
+    fprintf(stderr, "hash result: key: %s (%u), hash value: %u, target: %s:%u (%u)\n",
+            inet_ntop(AF_INET,
+                get_in_addr((struct sockaddr *)their_addr),
+                addrbuf0, sizeof(addrbuf0)),
+            ntohl(((struct sockaddr_in*)their_addr)->sin_addr.s_addr),
+            hashvalue,
+            inet_ntop(AF_INET,
+                get_in_addr((struct sockaddr *)sin),
+                addrbuf1, sizeof(addrbuf1)),
+            ntohs(((struct sockaddr_in*)sin)->sin_port),
+            target);
+#endif
+
+    return (struct sockaddr_storage*)&(td->targets[target]);
+}
+
 void *tee(void *arg0) {
     struct thread_data *td = (struct thread_data *)arg0;
-    // TODO: unused: struct s_features *features = &(td->features);
+    struct s_features *features = &(td->features);
     struct statistics *stats = &(td->stats);
 
     // incoming packets
@@ -137,7 +213,7 @@ void *tee(void *arg0) {
     char datagram[BUFLEN];
     struct iphdr *iph = (struct iphdr *)datagram;
     struct udphdr *udph = (/*u_int8_t*/void *)iph + sizeof(struct iphdr);
-    struct sockaddr_in sin = td->targets[td->thread_id];
+    struct sockaddr_in *sin = &(td->targets[td->thread_id]);
 
     memset(datagram, 0, BUFLEN);
     // Set appropriate fields in headers
@@ -167,9 +243,30 @@ void *tee(void *arg0) {
 
         data[numbytes] = '\0';
 
-#ifdef DEBUG
+        stats->in_bytecnt += sizeof(struct iphdr) + sizeof(struct udphdr) + numbytes;
+
+        if (features->hash_based_dist)
+            //sin = hash_based_output(&their_addr, td, (struct sockaddr_storage *)&sin);
+            sin = (struct sockaddr_in*)hash_based_output(&their_addr, td);
         char addrbuf0[INET6_ADDRSTRLEN];
         char addrbuf1[INET6_ADDRSTRLEN];
+        fprintf(stderr, "hash result: target: %s:%u\n",
+                inet_ntop(AF_INET,
+                    get_in_addr((struct sockaddr *)sin),
+                    addrbuf1, sizeof(addrbuf1)),
+                ntohs(((struct sockaddr_in*)sin)->sin_port));
+
+        update_udp_header(udph, numbytes, ((struct sockaddr_in*)&their_addr)->sin_port, sin->sin_port);
+        update_ip_header(iph, sizeof(struct udphdr) + numbytes,
+                         ((struct sockaddr_in*)&their_addr)->sin_addr.s_addr,
+                         sin->sin_addr.s_addr);
+
+        //if (!(features->duplicate))
+        //    break;
+
+#ifdef DEBUG
+        //char addrbuf0[INET6_ADDRSTRLEN];
+        //char addrbuf1[INET6_ADDRSTRLEN];
         fprintf(stderr, "listener %d: got packet from %s\n",
             td->thread_id,
             inet_ntop(their_addr.ss_family,
@@ -177,17 +274,6 @@ void *tee(void *arg0) {
                 addrbuf0, sizeof(addrbuf0)));
         fprintf(stderr, "listener %d: packet is %d bytes long\n", td->thread_id, numbytes);
         fprintf(stderr, "listener %d: packet contains \"%s\"\n", td->thread_id, data);
-        fprintf(stderr, "listener %d: crafting new packet...\n", td->thread_id);
-#endif
-
-        stats->in_bytecnt += sizeof(struct iphdr) + sizeof(struct udphdr) + numbytes;
-
-        update_udp_header(udph, numbytes, ((struct sockaddr_in*)&their_addr)->sin_port, sin.sin_port);
-        update_ip_header(iph, sizeof(struct udphdr) + numbytes,
-                         ((struct sockaddr_in*)&their_addr)->sin_addr.s_addr,
-                         sin.sin_addr.s_addr);
-
-#ifdef DEBUG
         fprintf(stderr, "listener %d: sending packet: %s:%u => %s:%u: len: %u\n",
             td->thread_id,
             inet_ntop(AF_INET,
@@ -201,7 +287,7 @@ void *tee(void *arg0) {
             iph->tot_len);
 #endif
 
-        if (sendto(ssock, datagram, iph->tot_len, 0, (struct sockaddr *) &sin, sizeof(sin)) < 0) {
+        if (sendto(ssock, datagram, iph->tot_len, 0, (struct sockaddr *) sin, sizeof(*sin)) < 0) {
             perror("sendto failed");
             fprintf(stderr, "pktlen: %u\n", iph->tot_len);
         }
@@ -383,7 +469,7 @@ void sig_handler_toggle_optional_output(int signum) {
 
 void usage(int argc, char *argv[]) {
     fprintf(stderr, "usage: %s -l <listenaddr:port> -m <r|d> -n <num_threads> "
-                    "[-L] <targetaddr:port> [targetaddr:port [...]]\n"
+                    "[-H] [-L] <targetaddr:port> [targetaddr:port [...]]\n"
                     "\tNote: num_threads must be >= number of target addresses", argv[0]);
     exit(1);
 }
@@ -410,7 +496,7 @@ int main(int argc, char *argv[]) {
     int c;
 
     opterr = 0;
-    while ((c = getopt (argc, argv, "l:m:n:L")) != -1)
+    while ((c = getopt (argc, argv, "l:m:n:LH")) != -1)
     switch (c) {
         case 'l':
             split_addr(optarg, listenaddr, &listenport);
@@ -484,11 +570,11 @@ int main(int argc, char *argv[]) {
         switch (mode) {
             case 'r':
                 tds[cnt].features.distribute = 1;
+                tds[cnt].features.load_balanced_dist = loadbalanced_dist_enabled;
+                tds[cnt].features.hash_based_dist = hash_based_dist_enabled;
             break;
             case 'd':
                 tds[cnt].features.duplicate = 1;
-                tds[cnt].features.load_balanced_dist = loadbalanced_dist_enabled;
-                tds[cnt].features.hash_based_dist = hash_based_dist_enabled;
                 optional_output_enabled = 1;
             break;
         }
@@ -506,7 +592,7 @@ int main(int argc, char *argv[]) {
             index = optind;
 
 #ifdef DEBUG
-        fprintf(stderr, "relaying to: %s:%u\n", cnt, addrbuf, portbuf);
+        fprintf(stderr, "relaying to: %s:%u\n", addrbuf, portbuf);
 #endif
     }
 
