@@ -506,7 +506,7 @@ int main(int argc, char *argv[]) {
             index = optind;
 
 #ifdef DEBUG
-        fprintf(stderr, "thread %u: relaying to: %s:%u\n", cnt, addrbuf, portbuf);
+        fprintf(stderr, "relaying to: %s:%u\n", cnt, addrbuf, portbuf);
 #endif
     }
 
