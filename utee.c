@@ -82,6 +82,7 @@ struct hashable {
     // TODO: if there shall be IPv6-support, increase the address space
     uint32_t addr;
     struct sockaddr_storage* output;
+    uint64_t pkt_cnt;
     UT_hash_handle hh;
 };
 
@@ -235,7 +236,7 @@ struct sockaddr_storage* ht_get(struct hashable **ht, uint32_t addr) {
 }
 
 
-struct sockaddr_storage* ht_get_add(struct hashable **ht, uint32_t addr, struct sockaddr_storage* output,
+struct hashable* ht_get_add(struct hashable **ht, uint32_t addr, struct sockaddr_storage* output,
                   uint8_t overwrite) {
     struct hashable *ht_e;
 
@@ -292,7 +293,7 @@ struct sockaddr_storage* ht_get_add(struct hashable **ht, uint32_t addr, struct 
     }
 #endif
 
-    return ht_e->output;
+    return ht_e;
 }
 
 void *tee(void *arg0) {
@@ -300,6 +301,7 @@ void *tee(void *arg0) {
     struct s_features *features = &(td->features);
     struct statistics *stats = &(td->stats);
     struct hashable** hashtable = &(td->hashtable);
+    struct hashable* ht_e;
 
     // incoming packets
     int numbytes = 0;
@@ -351,21 +353,24 @@ void *tee(void *arg0) {
             sin = (struct sockaddr_in*)hash_based_output(&their_addr, td);
 
         if (features->load_balanced_dist) {
-            sin = (struct sockaddr_in*) ht_get_add(hashtable,
+            ht_e = (struct hashable*) ht_get_add(hashtable,
                    ((struct sockaddr_in*)&their_addr)->sin_addr.s_addr,
                    (struct sockaddr_storage*)sin, 0);
-            if (sin == NULL) {
+            if (ht_e == NULL) {
                 fprintf(stderr, "listener %d: Error while adding element to hashtable\n", td->thread_id);
                 exit(1);
             }
+            sin = (struct sockaddr_in*)ht_e->output;
         }
 
 #ifdef DEBUG
-        fprintf(stderr, "hash result: target: %s:%u\n",
-                inet_ntop(AF_INET,
-                    get_in_addr((struct sockaddr *)sin),
-                    addrbuf1, sizeof(addrbuf1)),
-                ntohs(((struct sockaddr_in*)sin)->sin_port));
+        if (features->hash_based_dist || features->load_balanced_dist)
+            fprintf(stderr, "hash result for addr: target: %s:%u (count: %lu)\n",
+                    inet_ntop(AF_INET,
+                        get_in_addr((struct sockaddr *)sin),
+                        addrbuf1, sizeof(addrbuf1)),
+                    ntohs(((struct sockaddr_in*)sin)->sin_port),
+                    ht_e->pkt_cnt);
 #endif
 
         update_udp_header(udph, numbytes, ((struct sockaddr_in*)&their_addr)->sin_port, sin->sin_port);
@@ -405,6 +410,8 @@ void *tee(void *arg0) {
         }
         else {
             stats->out_bytecnt += sizeof(struct iphdr) + sizeof(struct udphdr) + numbytes;
+            if (features->load_balanced_dist)
+                ht_e->pkt_cnt++;
         }
     }
 }
