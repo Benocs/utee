@@ -185,26 +185,6 @@ struct sockaddr_storage* hash_based_output(struct sockaddr_storage *their_addr,
             target
             );
 
-
-#if defined(DEBUG) || defined(HASH_DEBUG)
-    struct sockaddr_storage *sin;
-
-    sin = (struct sockaddr_storage*)&(td->targets[target]);
-    char addrbuf0[INET6_ADDRSTRLEN];
-    char addrbuf1[INET6_ADDRSTRLEN];
-    fprintf(stderr, "hash result: key: %s (%u), hash value: %u, target: %s:%u (%u)\n",
-            inet_ntop(AF_INET,
-                get_in_addr((struct sockaddr *)their_addr),
-                addrbuf0, sizeof(addrbuf0)),
-            ntohl(((struct sockaddr_in*)their_addr)->sin_addr.s_addr),
-            hashvalue,
-            inet_ntop(AF_INET,
-                get_in_addr((struct sockaddr *)sin),
-                addrbuf1, sizeof(addrbuf1)),
-            ntohs(((struct sockaddr_in*)sin)->sin_port),
-            target);
-#endif
-
     return (struct sockaddr_storage*)&(td->targets[target]);
 }
 
@@ -244,6 +224,7 @@ struct hashable* ht_get_add(struct hashable **ht, uint32_t addr, struct sockaddr
         }
         ht_e->addr = addr;
         ht_e->output = output;
+        ht_e->pkt_cnt = 0;
         HASH_ADD_INT(*ht, addr, ht_e);
     }
 
@@ -300,8 +281,10 @@ void *tee(void *arg0) {
     setup_udp_header(udph, 0, 0, 0);
     char *data = (char *)udph + sizeof(struct udphdr);
 
-#ifdef DEBUG
+#if defined(DEBUG) || defined(DEBUG_ERRORS)
         char addrbuf0[INET6_ADDRSTRLEN];
+#endif
+#if defined(DEBUG) || defined(HASH_DEBUG) || defined(DEBUG_ERRORS)
         char addrbuf1[INET6_ADDRSTRLEN];
 #endif
 
@@ -310,6 +293,13 @@ void *tee(void *arg0) {
         fprintf(stderr, "listener %d: Cannot open raw socket.\n", td->thread_id);
         exit(1);
     }
+
+#ifdef USE_SELECT
+    fd_set wfds;
+    struct timeval tv;
+    int retval;
+    FD_ZERO(&wfds);
+#endif
 
     while (1) {
         if ((numbytes = recvfrom(td->sockfd, data, BUFLEN-sizeof(struct iphdr)-sizeof(struct udphdr), 0,
@@ -343,9 +333,10 @@ void *tee(void *arg0) {
             sin = (struct sockaddr_in*)ht_e->output;
         }
 
-#ifdef DEBUG
+#if defined(DEBUG) || defined(HASH_DEBUG)
         if (features->hash_based_dist || features->load_balanced_dist)
-            fprintf(stderr, "hash result for addr: target: %s:%u (count: %lu)\n",
+            fprintf(stderr, "listener %d: hash result for addr: target: %s:%u (count: %lu)\n",
+                    td->thread_id,
                     inet_ntop(AF_INET,
                         get_in_addr((struct sockaddr *)sin),
                         addrbuf1, sizeof(addrbuf1)),
@@ -358,19 +349,14 @@ void *tee(void *arg0) {
                          ((struct sockaddr_in*)&their_addr)->sin_addr.s_addr,
                          sin->sin_addr.s_addr);
 
-        //if (!(features->duplicate))
-        //    break;
-
 #ifdef DEBUG
-        //char addrbuf0[INET6_ADDRSTRLEN];
-        //char addrbuf1[INET6_ADDRSTRLEN];
-        fprintf(stderr, "listener %d: got packet from %s\n",
+        fprintf(stderr, "listener %d: got packet from %s:%d\n",
             td->thread_id,
             inet_ntop(their_addr.ss_family,
                 get_in_addr((struct sockaddr *)&their_addr),
-                addrbuf0, sizeof(addrbuf0)));
+                addrbuf0, sizeof(addrbuf0)),
+            ntohs(((struct sockaddr_in*)&their_addr)->sin_port));
         fprintf(stderr, "listener %d: packet is %d bytes long\n", td->thread_id, numbytes);
-        fprintf(stderr, "listener %d: packet contains \"%s\"\n", td->thread_id, data);
         fprintf(stderr, "listener %d: sending packet: %s:%u => %s:%u: len: %u\n",
             td->thread_id,
             inet_ntop(AF_INET,
@@ -384,15 +370,46 @@ void *tee(void *arg0) {
             iph->tot_len);
 #endif
 
-        if (sendto(ssock, datagram, iph->tot_len, 0, (struct sockaddr *) sin, sizeof(*sin)) < 0) {
-            perror("sendto failed");
-            fprintf(stderr, "pktlen: %u\n", iph->tot_len);
-        }
-        else {
-            stats->out_bytecnt += sizeof(struct iphdr) + sizeof(struct udphdr) + numbytes;
-            if (features->load_balanced_dist)
-                ht_e->pkt_cnt++;
-        }
+#ifdef USE_SELECT
+        do {
+            do {
+                tv.tv_sec = 0;
+                tv.tv_usec = 100000;
+                FD_SET(ssock, &wfds);
+                retval = select(ssock+1, NULL, &wfds, NULL, &tv);
+
+                if (retval == -1)
+                    perror("select()");
+            } while (retval <= 0);
+#endif
+            if (sendto(ssock, datagram, iph->tot_len, 0, (struct sockaddr *) sin, sizeof(*sin)) < 0) {
+                perror("sendto failed");
+                fprintf(stderr, "%lu - listener %d: error in write %s - %d\n", time(NULL), td->thread_id, strerror(errno), errno);
+#ifdef USE_SELECT
+                retval = -1;
+#endif
+            }
+            else {
+                stats->out_bytecnt += sizeof(struct iphdr) + sizeof(struct udphdr) + numbytes;
+                if (features->load_balanced_dist)
+                    ht_e->pkt_cnt++;
+#ifdef DEBUG
+                fprintf(stderr, "listener %d: sent packet: %s:%u => %s:%u: len: %u\n",
+                    td->thread_id,
+                    inet_ntop(AF_INET,
+                        (struct sockaddr_in *)&(iph->saddr),
+                        addrbuf0, sizeof(addrbuf0)),
+                    ntohs(udph->source),
+                    inet_ntop(AF_INET,
+                        (struct sockaddr_in *)&(iph->daddr),
+                        addrbuf1, sizeof(addrbuf1)),
+                    ntohs(udph->dest),
+                    iph->tot_len);
+#endif
+            }
+#ifdef USE_SELECT
+        } while (retval <= 0);
+#endif
     }
 }
 
