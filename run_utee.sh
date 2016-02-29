@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ##################################
-build utee
+# build utee
 ##################################
 
 #
@@ -43,7 +43,7 @@ gcc -g -Wall -o utee utee.c -lpthread ${extraflags} ${hash_flags} ${debugflags} 
 
 
 ##################################
-run utee
+# run utee
 ##################################
 
 listen_address="0.0.0.0"
