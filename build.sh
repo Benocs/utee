@@ -4,6 +4,16 @@
 # build utee
 ##################################
 
+SOURCE=utee.c
+BINARY=$(echo $SOURCE | cut -d. -f 1)
+
+# The code can still be compiled without any of these directives present
+# NOTE: all pre-processor fields are in "" - if they are not, the file won't compile !
+
+GIT_REVISION=\"$(git log --pretty=oneline | head -n 1 | cut -d\  -f 1)\"
+COMPILE_TIME=\"$(date +"%d.%m.%Y %H:%M:%S")\"
+MD5_SUM=\"$(md5sum ${SOURCE} |cut -d\  -f 1)\"
+
 #
 # enable info-level logging
 #
@@ -39,4 +49,8 @@ ulimit_="ulimit -c unlimited; "
 #
 # (debug) build
 #
-gcc -g -Wall -o utee utee.c -lpthread ${extraflags} ${hash_flags} ${debugflags} ${log_flags} || exit 2
+gcc -g -Wall -o ${BINARY} ${SOURCE} -lpthread \
+    ${extraflags} ${hash_flags} ${debugflags} ${log_flags} \
+    -DGIT_REVISION=$GIT_REVISION \
+    -DCOMPILE_TIME="$COMPILE_TIME" \
+    -DMD5_SUM=$MD5_SUM || exit 2

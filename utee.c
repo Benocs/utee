@@ -31,6 +31,18 @@
 
 #include "uthash.h"
 
+#ifndef GIT_REVISION
+  #define GIT_REVISION "<unknown>"
+#endif
+
+#ifndef COMPILE_TIME
+  #define COMPILE_TIME "<unknown>"
+#endif
+
+#ifndef MD5_SUM
+  #define MD5_SUM "<unknown>"
+#endif
+
 #define BUFLEN 4096
 #define MAXTHREADS 1024
 
@@ -775,7 +787,11 @@ void usage(int argc, char *argv[]) {
     fprintf(stderr, "usage: %s -l <listenaddr:port> -m <r|d> -n <num_threads> "
                     "[-H] [-L] <targetaddr:port> [targetaddr:port [...]]\n"
                     "\tNote: num_threads must be >= number of target "
-                    "addresses\n", argv[0]);
+                    "addresses\n\n"
+                    "repository revision: %s\n"
+                    "compile time:        %s\n"
+                    "source MD5 sum:      %s\n",
+                    argv[0], GIT_REVISION, COMPILE_TIME, MD5_SUM);
     exit(1);
 }
 
