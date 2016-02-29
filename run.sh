@@ -4,6 +4,17 @@
 # run utee
 ##################################
 
+#
+# start utee using strace
+#
+#strace_="strace -- "
+strace_=
+
+#
+# generate core dump on crash
+#
+ulimit_="ulimit -c unlimited"
+
 listen_address="0.0.0.0"
 listen_port=2055
 
@@ -11,7 +22,7 @@ mode="r"
 mode_extra=
 number_of_threads=15
 
-targets="=10.0.1.2:2100 \
+targets="10.0.1.2:2100 \
 10.0.1.2:2101 \
 10.0.1.2:2102 \
 10.0.1.2:2103 \
@@ -27,5 +38,6 @@ targets="=10.0.1.2:2100 \
 10.0.1.2:2113 \
 10.0.1.2:2114"
 
-sudo bash -c "${ulimit_} ${strace_} ./utee -l ${listen_address}:${listen_port}" \
+${ulimit_}
+${strace_} ./utee -l ${listen_address}:${listen_port} \
     -m ${mode} ${mode_extra} -n ${number_of_threads} ${targets}

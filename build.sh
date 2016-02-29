@@ -36,17 +36,6 @@ extraflags="-DUSE_SELECT -DRCV_ON_RAW"
 debugflags=
 
 #
-# start utee using strace
-#
-#strace_="strace -- "
-strace_=
-
-#
-# generate core dump on crash
-#
-ulimit_="ulimit -c unlimited; "
-
-#
 # (debug) build
 #
 gcc -g -Wall -o ${BINARY} ${SOURCE} -lpthread \
