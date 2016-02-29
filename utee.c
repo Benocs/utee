@@ -24,6 +24,8 @@
 #include <netdb.h>
 #include <signal.h>
 #include <pthread.h>
+#include <sys/ioctl.h>
+#include <linux/sockios.h>
 #include <sys/select.h>
 #include <time.h>
 
@@ -66,9 +68,21 @@ do {                                                                          \
 #define HASH_ADDR HASH_MOD
 #endif
 
-struct statistics {
+struct s_target {
+#if defined ENABLE_IPV6
+    struct sockaddr_storage dest;
+#else
+    struct sockaddr dest;
+#endif
+    socklen_t dest_len;
+    int fd;
+};
+
+struct s_statistics {
     uint64_t in_bytecnt;
     uint64_t out_bytecnt;
+    uint64_t in_packets;
+    uint64_t out_packets;
 };
 
 struct s_features {
@@ -78,22 +92,22 @@ struct s_features {
     uint8_t duplicate;
 };
 
-struct hashable {
+struct s_hashable {
     // TODO: if there shall be IPv6-support, increase the address space
     uint32_t addr;
-    struct sockaddr_storage* output;
+    struct s_target* target;
     uint64_t pkt_cnt;
     UT_hash_handle hh;
 };
 
-struct thread_data {
+struct s_thread_data {
     int thread_id;
     int sockfd;
-    struct sockaddr_in* targets;
+    struct s_target* targets;
     uint32_t num_targets;
-    struct statistics stats;
+    struct s_statistics stats;
     struct s_features features;
-    struct hashable* hashtable;
+    struct s_hashable* hashtable;
 };
 
 char *myStrCat (char *s, char *a) {
@@ -168,8 +182,8 @@ void setup_udp_header(struct udphdr *udph, uint16_t udp_payload_len,
     update_udp_header(udph, udp_payload_len, source, dest);
 }
 
-struct sockaddr_storage* hash_based_output(struct sockaddr_storage *their_addr,
-                                           struct thread_data* td) {
+struct s_target* hash_based_output(struct sockaddr_storage *their_addr,
+                                           struct s_thread_data* td) {
 
     uint32_t hashvalue = 0;
     uint32_t target = 0;
@@ -185,20 +199,20 @@ struct sockaddr_storage* hash_based_output(struct sockaddr_storage *their_addr,
             target
             );
 
-    return (struct sockaddr_storage*)&(td->targets[target]);
+    return (struct s_target*)&(td->targets[target]);
 }
 
-struct hashable* ht_get(struct hashable **ht, uint32_t addr) {
-    struct hashable *ht_e;
+struct s_hashable* ht_get(struct s_hashable **ht, uint32_t addr) {
+    struct s_hashable *ht_e;
 
     HASH_FIND_INT(*ht, &addr, ht_e);
 
     return ht_e;
 }
 
-struct hashable* ht_get_add(struct hashable **ht, uint32_t addr, struct sockaddr_storage* output,
+struct s_hashable* ht_get_add(struct s_hashable **ht, uint32_t addr, struct s_target* target,
                   uint8_t overwrite) {
-    struct hashable *ht_e;
+    struct s_hashable *ht_e;
 
 #if defined(DEBUG) || defined(HASH_DEBUG)
     char addrbuf0[INET6_ADDRSTRLEN];
@@ -213,17 +227,17 @@ struct hashable* ht_get_add(struct hashable **ht, uint32_t addr, struct sockaddr
             inet_ntop(AF_INET, (struct sockaddr_in *)&(addr), addrbuf0,
                 sizeof(addrbuf0)),
             inet_ntop(AF_INET,
-                get_in_addr((struct sockaddr *)output),
+                get_in_addr((struct sockaddr *)&(target->dest)),
                 addrbuf1, sizeof(addrbuf1)),
-            ntohs(((struct sockaddr_in *)output)->sin_port));
+            ntohs(((struct sockaddr_in *)&(target->dest))->sin_port));
         added = 1;
 #endif
-        if ((ht_e = (struct hashable*)malloc(sizeof(struct hashable))) == NULL) {
+        if ((ht_e = (struct s_hashable*)malloc(sizeof(struct s_hashable))) == NULL) {
             perror("allocate new hashtable element");
             return NULL;
         }
         ht_e->addr = addr;
-        ht_e->output = output;
+        ht_e->target = target;
         ht_e->pkt_cnt = 0;
         HASH_ADD_INT(*ht, addr, ht_e);
     }
@@ -232,25 +246,25 @@ struct hashable* ht_get_add(struct hashable **ht, uint32_t addr, struct sockaddr
 #if defined(DEBUG) || defined(HASH_DEBUG)
     {
 #endif
-        ht_e->output = output;
+        ht_e->target = target;
 #if defined(DEBUG) || defined(HASH_DEBUG)
         if (!added)
             fprintf(stderr, "ht: addr: %s found. overwriting. using new output: %s:%u\n",
                 inet_ntop(AF_INET, (struct sockaddr_in *)&(addr), addrbuf0,
                     sizeof(addrbuf0)),
                 inet_ntop(AF_INET,
-                    get_in_addr((struct sockaddr *)ht_e->output),
+                    get_in_addr((struct sockaddr *)&(ht_e->target->dest)),
                     addrbuf1, sizeof(addrbuf1)),
-                ntohs(((struct sockaddr_in *)output)->sin_port));
+                ntohs(((struct sockaddr_in *)&(target->dest))->sin_port));
     }
     else if (!added) {
         fprintf(stderr, "ht: addr: %s found. not overwriting. using output: %s:%u\n",
             inet_ntop(AF_INET, (struct sockaddr_in *)&(addr), addrbuf0,
                 sizeof(addrbuf0)),
             inet_ntop(AF_INET,
-                get_in_addr((struct sockaddr *)ht_e->output),
+                get_in_addr((struct sockaddr *)&(ht_e->target->dest)),
                 addrbuf1, sizeof(addrbuf1)),
-            ntohs(((struct sockaddr_in *)output)->sin_port));
+            ntohs(((struct sockaddr_in *)&(target->dest))->sin_port));
     }
 #endif
 
@@ -258,11 +272,13 @@ struct hashable* ht_get_add(struct hashable **ht, uint32_t addr, struct sockaddr
 }
 
 void *tee(void *arg0) {
-    struct thread_data *td = (struct thread_data *)arg0;
+    // TODO: refactor socket names (src, dest, ...)
+
+    struct s_thread_data *td = (struct s_thread_data *)arg0;
     struct s_features *features = &(td->features);
-    struct statistics *stats = &(td->stats);
-    struct hashable** hashtable = &(td->hashtable);
-    struct hashable* ht_e;
+    struct s_statistics *stats = &(td->stats);
+    struct s_hashable** hashtable = &(td->hashtable);
+    struct s_hashable* ht_e;
 
     // incoming packets
     int numbytes = 0;
@@ -273,7 +289,12 @@ void *tee(void *arg0) {
     char datagram[BUFLEN];
     struct iphdr *iph = (struct iphdr *)datagram;
     struct udphdr *udph = (/*u_int8_t*/void *)iph + sizeof(struct iphdr);
-    struct sockaddr_in *sin = &(td->targets[td->thread_id]);
+    struct s_target *target = &(td->targets[td->thread_id]);
+
+#if defined ENABLE_IPV6
+#else
+    struct sockaddr_in *sin = (struct sockaddr_in *)&(target->dest);
+#endif
 
     memset(datagram, 0, BUFLEN);
     // Set appropriate fields in headers
@@ -282,17 +303,26 @@ void *tee(void *arg0) {
     char *data = (char *)udph + sizeof(struct udphdr);
 
 #if defined(DEBUG) || defined(DEBUG_ERRORS)
-        char addrbuf0[INET6_ADDRSTRLEN];
+      char addrbuf0[INET6_ADDRSTRLEN];
 #endif
 #if defined(DEBUG) || defined(HASH_DEBUG) || defined(DEBUG_ERRORS)
-        char addrbuf1[INET6_ADDRSTRLEN];
+      char addrbuf1[INET6_ADDRSTRLEN];
 #endif
 
-    int ssock = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
-    if(ssock < 0){
-        fprintf(stderr, "listener %d: Cannot open raw socket.\n", td->thread_id);
-        exit(1);
-    }
+#ifdef DEBUG_SOCKET_BUFFERS
+    uint64_t outstandingBytes, sendBuffSize, rcvBuffSize;
+    socklen_t optlen = sizeof(sendBuffSize);
+    getsockopt(ssock, SOL_SOCKET, SO_SNDBUF, &sendBuffSize, &optlen);
+    getsockopt(td->sockfd, SOL_SOCKET, SO_RCVBUF, &rcvBuffSize, &optlen);
+
+    ioctl(ssock, SIOCOUTQ, &outstandingBytes);
+    fprintf(stderr, "listener %d: send buffer: size: %lu, outstanding bytes: %lu\n",
+            td->thread_id, sendBuffSize, outstandingBytes);
+
+    ioctl(td->sockfd, SIOCINQ, &outstandingBytes);
+    fprintf(stderr, "listener %d: recv buffer: size: %lu, outstanding bytes: %lu\n",
+            td->thread_id, rcvBuffSize, outstandingBytes);
+#endif
 
 #ifdef USE_SELECT
     fd_set wfds;
@@ -308,9 +338,21 @@ void *tee(void *arg0) {
             continue;
         }
 
+#ifdef DEBUG_SOCKET_BUFFERS
+        ioctl(ssock, SIOCOUTQ, &outstandingBytes);
+        if ((outstandingBytes/2) >= sendBuffSize)
+            fprintf(stderr, "listener %d: send buffer: size: %lu, outstanding bytes: %lu\n",
+                    td->thread_id, sendBuffSize, outstandingBytes);
+
+        ioctl(td->sockfd, SIOCINQ, &outstandingBytes);
+        if ((outstandingBytes/2) >= rcvBuffSize)
+            fprintf(stderr, "listener %d: recv buffer: size: %lu, outstanding bytes: %lu\n",
+                    td->thread_id, rcvBuffSize, outstandingBytes);
+#endif
+
         if (numbytes > 1472) {
-#ifdef DEBUG
-            fprintf(stderr, "listener %d: packet is %d bytes long cropping to 1472\n", td->thread_id, numbytes);
+#ifdef DEBUG_ERRORS
+            fprintf(stderr, "ERROR: listener %d: packet is %d bytes long cropping to 1472\n", td->thread_id, numbytes);
 #endif
             numbytes = 1472;
         }
@@ -318,19 +360,24 @@ void *tee(void *arg0) {
         data[numbytes] = '\0';
 
         stats->in_bytecnt += sizeof(struct iphdr) + sizeof(struct udphdr) + numbytes;
+        stats->in_packets++;
 
-        if (features->hash_based_dist || features->load_balanced_dist)
-            sin = (struct sockaddr_in*)hash_based_output(&their_addr, td);
+        if (features->hash_based_dist || features->load_balanced_dist) {
+            target = (struct s_target*)hash_based_output(&their_addr, td);
+            sin = (struct sockaddr_in*)&(target->dest);
+        }
 
         if (features->load_balanced_dist) {
-            ht_e = (struct hashable*) ht_get_add(hashtable,
+            ht_e = (struct s_hashable*) ht_get_add(hashtable,
                    ((struct sockaddr_in*)&their_addr)->sin_addr.s_addr,
-                   (struct sockaddr_storage*)sin, 0);
+                   target, 0);
+
             if (ht_e == NULL) {
                 fprintf(stderr, "listener %d: Error while adding element to hashtable\n", td->thread_id);
                 exit(1);
             }
-            sin = (struct sockaddr_in*)ht_e->output;
+            target = ht_e->target;
+            sin = (struct sockaddr_in*)&(target->dest);
         }
 
 #if defined(DEBUG) || defined(HASH_DEBUG)
@@ -375,14 +422,15 @@ void *tee(void *arg0) {
             do {
                 tv.tv_sec = 0;
                 tv.tv_usec = 100000;
-                FD_SET(ssock, &wfds);
-                retval = select(ssock+1, NULL, &wfds, NULL, &tv);
+                FD_SET(target->fd, &wfds);
+                retval = select((target->fd)+1, NULL, &wfds, NULL, &tv);
 
                 if (retval == -1)
                     perror("select()");
             } while (retval <= 0);
 #endif
-            if (sendto(ssock, datagram, iph->tot_len, 0, (struct sockaddr *) sin, sizeof(*sin)) < 0) {
+            int32_t written;
+            if ((written = sendto(target->fd, datagram, iph->tot_len, 0, (struct sockaddr *) sin, sizeof(*sin))) < 0) {
                 perror("sendto failed");
                 fprintf(stderr, "%lu - listener %d: error in write %s - %d\n", time(NULL), td->thread_id, strerror(errno), errno);
 #ifdef USE_SELECT
@@ -391,21 +439,27 @@ void *tee(void *arg0) {
             }
             else {
                 stats->out_bytecnt += sizeof(struct iphdr) + sizeof(struct udphdr) + numbytes;
+                stats->out_packets++;
                 if (features->load_balanced_dist)
                     ht_e->pkt_cnt++;
-#ifdef DEBUG
-                fprintf(stderr, "listener %d: sent packet: %s:%u => %s:%u: len: %u\n",
-                    td->thread_id,
-                    inet_ntop(AF_INET,
-                        (struct sockaddr_in *)&(iph->saddr),
-                        addrbuf0, sizeof(addrbuf0)),
-                    ntohs(udph->source),
-                    inet_ntop(AF_INET,
-                        (struct sockaddr_in *)&(iph->daddr),
-                        addrbuf1, sizeof(addrbuf1)),
-                    ntohs(udph->dest),
-                    iph->tot_len);
+                if ( written != iph->tot_len) {
+                    // TODO: handle this short write - TODO: how to handle?
+                    //retval
+
+#ifdef DEBUG_ERRORS
+                    fprintf(stderr, "ERROR: listener %d: short write: sent packet: %s:%u => %s:%u: len: %u written: %d\n",
+                        td->thread_id,
+                        inet_ntop(AF_INET,
+                            (struct sockaddr_in *)&(iph->saddr),
+                            addrbuf0, sizeof(addrbuf0)),
+                        ntohs(udph->source),
+                        inet_ntop(AF_INET,
+                            (struct sockaddr_in *)&(iph->daddr),
+                            addrbuf1, sizeof(addrbuf1)),
+                        ntohs(udph->dest),
+                        iph->tot_len, written);
 #endif
+                }
             }
 #ifdef USE_SELECT
         } while (retval <= 0);
@@ -414,11 +468,13 @@ void *tee(void *arg0) {
 }
 
 void *duplicate(void *arg0) {
+    // TODO: refactor me / merge into *tee
+#if 0
     uint16_t cnt;
 
-    struct thread_data *td = (struct thread_data *)arg0;
+    struct s_thread_data *td = (struct s_thread_data *)arg0;
     struct s_features *features = &(td->features);
-    struct statistics *stats = &(td->stats);
+    struct s_statistics *stats = &(td->stats);
 
     // incoming packets
     int numbytes = 0;
@@ -439,7 +495,7 @@ void *duplicate(void *arg0) {
 
     int ssock = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
     if(ssock < 0){
-        fprintf(stderr, "Could not open raw socket.\n");
+        fprintf(stderr, "Could not open raw socket\n");
         exit(1);
     }
 
@@ -474,6 +530,7 @@ void *duplicate(void *arg0) {
 #endif
 
         stats->in_bytecnt += sizeof(struct iphdr) + sizeof(struct udphdr) + numbytes;
+        stats->in_packets++;
 
         // get main output: targets[0]
         // check whether features->duplicate == 1
@@ -507,38 +564,36 @@ void *duplicate(void *arg0) {
             }
             else {
                 stats->out_bytecnt += sizeof(struct iphdr) + sizeof(struct udphdr) + numbytes;
+                stats->out_packets++;
             }
 
             if (!(features->duplicate))
                 break;
         }
     }
+#endif
+    return NULL;
 }
 
-int open_listener_socket(char* laddr, int lport) {
-    struct sockaddr_in listener_addr;
-    int lsock_option = 1;
-    int lsock;
+int setsocksize(int s, int level, int optname, void *optval, socklen_t optlen) {
+    int ret;
+    socklen_t len = sizeof(socklen_t);
+    socklen_t value;
+    socklen_t saved;
 
-    bzero(&listener_addr, sizeof(listener_addr));
-    listener_addr.sin_family = AF_INET;
-    listener_addr.sin_port = htons(lport);
-    listener_addr.sin_addr.s_addr = inet_addr(laddr);
+    memcpy(&value, optval, sizeof(socklen_t));
 
-    if ((lsock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-        perror("listener: socket");
-        return -1;
+    getsockopt(s, level, optname, &saved, &len);
+    if (value > saved) {
+        for (; value; value >>= 1) {
+            ret = setsockopt(s, level, optname, &value, optlen);
+            if (ret >= 0) break;
+        }
+        if (!value)
+            setsockopt(s, level, optname, &saved, len);
     }
 
-    setsockopt(lsock, SOL_SOCKET, SO_REUSEADDR, (void *)&lsock_option, sizeof(lsock_option));
-
-    if (bind(lsock, (struct sockaddr *)&listener_addr, sizeof(listener_addr)) == -1) {
-        close(lsock);
-        perror("listener: bind");
-        return -1;
-    }
-
-    return lsock;
+    return ret;
 }
 
 int split_addr(const char* addr, char* ip, uint16_t* port) {
@@ -555,12 +610,145 @@ int split_addr(const char* addr, char* ip, uint16_t* port) {
     return 0;
 }
 
+int prepare_sending_socket(struct sockaddr *addr, socklen_t len, uint32_t pipe_size) {
+    int s = 0;
+
+    if ((s = socket(addr->sa_family, SOCK_RAW, IPPROTO_RAW)) == -1) {
+        fprintf(stderr, "ERROR: cannot create sending socket: %s\n", strerror(errno));
+        exit(1);
+    }
+
+    if (pipe_size) {
+        socklen_t optlen = sizeof(pipe_size);
+        int saved = 0, obtained = 0;
+
+        getsockopt(s, SOL_SOCKET, SO_SNDBUF, &saved, &optlen);
+        setsocksize(s, SOL_SOCKET, SO_SNDBUF, &pipe_size, sizeof(pipe_size));
+        getsockopt(s, SOL_SOCKET, SO_SNDBUF, &obtained, &optlen);
+
+        if (obtained < saved) {
+            setsocksize(s, SOL_SOCKET, SO_SNDBUF, &saved, optlen);
+            getsockopt(s, SOL_SOCKET, SO_SNDBUF, &obtained, &optlen);
+        }
+#ifdef LOG_INFO
+        fprintf(stderr, "INFO: sending socket: pipe_size: obtained=%d target=%u saved=%u\n", obtained, pipe_size, saved);
+#endif
+    }
+
+#ifdef DEBUG
+    char addrbuf[INET6_ADDRSTRLEN];
+    fprintf(stderr, "connecting to target: %s:%d\n",
+        inet_ntop(AF_INET,
+            get_in_addr((struct sockaddr *)(addr)),
+            addrbuf, sizeof(addrbuf)),
+        ntohs(((struct sockaddr_in*)addr)->sin_port));
+#endif
+    if (connect(s, addr, len) == -1) {
+        fprintf(stderr, "ERROR: connect(): %s\n", strerror(errno));
+        exit(1);
+    }
+
+    return(s);
+}
+
+void init_sending_sockets(struct s_target* targets,
+        uint32_t num_targets,
+        char *raw_targets[],
+        uint32_t pipe_size) {
+
+    struct s_target *target = NULL;
+    struct sockaddr *sa;
+    uint16_t recv_idx;
+    int err;
+    char dest_addr[256];
+    char dest_serv[256];
+
+    char addrbuf[INET6_ADDRSTRLEN];
+    uint16_t portbuf;
+
+    for (recv_idx = 0; recv_idx < num_targets; recv_idx++) {
+        target = &targets[recv_idx];
+
+        split_addr(raw_targets[recv_idx], addrbuf, &portbuf);
+
+        ((struct sockaddr_in*)&(target->dest))->sin_family = AF_INET;
+        ((struct sockaddr_in*)&(target->dest))->sin_addr.s_addr = inet_addr(addrbuf);
+        ((struct sockaddr_in*)&(target->dest))->sin_port = htons(portbuf);
+
+        sa = (struct sockaddr *) &target->dest;
+        target->dest_len = sizeof(target->dest);
+
+        if (sa->sa_family != 0) {
+            if ((err = getnameinfo(sa, target->dest_len, dest_addr, sizeof(dest_addr),
+                    dest_serv, sizeof(dest_serv), NI_NUMERICHOST)) == -1) {
+                fprintf(stderr, "ERROR: getnameinfo: %d\n", err);
+                exit(1);
+            }
+        }
+
+        target->fd = prepare_sending_socket((struct sockaddr *) &target->dest, target->dest_len, pipe_size);
+
+#ifdef DEBUG
+        fprintf(stderr, "receiver: %s:%d :: fd: %d\n",
+            inet_ntop(AF_INET,
+                get_in_addr((struct sockaddr *)&(target->dest)),
+                addrbuf, sizeof(addrbuf)),
+            ((struct sockaddr_in*)&(target->dest))->sin_port,
+            target->fd);
+#endif
+    }
+}
+
+int open_listener_socket(char* laddr, int lport, uint32_t pipe_size) {
+    struct sockaddr_in listener_addr;
+    int lsock_option = 1;
+    int lsock;
+
+    bzero(&listener_addr, sizeof(listener_addr));
+    listener_addr.sin_family = AF_INET;
+    listener_addr.sin_port = htons(lport);
+    listener_addr.sin_addr.s_addr = inet_addr(laddr);
+
+    if ((lsock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+        perror("listener: socket");
+        return -1;
+    }
+
+    if (pipe_size) {
+        socklen_t optlen = sizeof(pipe_size);
+        int saved = 0, obtained = 0;
+
+        getsockopt(lsock, SOL_SOCKET, SO_RCVBUF, &saved, &optlen);
+        setsocksize(lsock, SOL_SOCKET, SO_RCVBUF, &pipe_size, optlen);
+        getsockopt(lsock, SOL_SOCKET, SO_RCVBUF, &obtained, &optlen);
+
+        //if (obtained < saved) {
+        //    setsocksize(lsock, SOL_SOCKET, SO_RCVBUF, &saved, optlen);
+        //    getsockopt(lsock, SOL_SOCKET, SO_RCVBUF, &obtained, &optlen);
+        //}
+#ifdef LOG_INFO
+        fprintf(stderr, "INFO: listening socket: pipe_size: obtained=%d target=%u saved=%u\n", obtained, pipe_size, saved);
+#endif
+    }
+
+    setsockopt(lsock, SOL_SOCKET, SO_REUSEADDR, (void *)&lsock_option, sizeof(lsock_option));
+
+    if (bind(lsock, (struct sockaddr *)&listener_addr, sizeof(listener_addr)) == -1) {
+        close(lsock);
+        perror("listener: bind");
+        return -1;
+    }
+
+    return lsock;
+}
+
+// variables that are changed when a signal arrives
 uint8_t stats_enabled = 0;
 uint8_t reset_stats = 0;
 uint8_t optional_output_enabled = 0;
+
+struct s_thread_data tds[MAXTHREADS];
 uint16_t num_threads = 0;
-struct thread_data tds[MAXTHREADS];
-struct sockaddr_in targets[MAXTHREADS];
 
 void sig_handler_toggle_stats(int signum) {
     stats_enabled = (!stats_enabled);
@@ -592,23 +780,24 @@ void usage(int argc, char *argv[]) {
 
 int main(int argc, char *argv[]) {
 
+    struct s_target targets[MAXTHREADS];
+
     char listenaddr[INET6_ADDRSTRLEN];
     uint16_t listenport = 0;
     pthread_t thread[MAXTHREADS];
     uint8_t cnt;
     int lsock;
 
-    char addrbuf[INET6_ADDRSTRLEN];
-    uint16_t portbuf;
-
     unsigned char mode = 0xFF;
 
     uint8_t loadbalanced_dist_enabled = 0;
     uint8_t hash_based_dist_enabled = 0;
 
+    // 64 MB SND/RCV buffers
+    uint32_t pipe_size = 67108864;
+
     time_t now;
 
-    int index;
     int c;
 
     opterr = 0;
@@ -674,7 +863,7 @@ int main(int argc, char *argv[]) {
 #ifdef DEBUG
     fprintf(stderr, "setting up listener socket...\n");
 #endif
-    lsock = open_listener_socket(listenaddr, listenport);
+    lsock = open_listener_socket(listenaddr, listenport, pipe_size);
 
     bzero(tds, sizeof(tds));
     // this one loops over all threads
@@ -698,20 +887,7 @@ int main(int argc, char *argv[]) {
     }
 
     // set all targets
-    index = optind;
-    for (cnt = 0; cnt < num_threads; cnt++) {
-        split_addr(argv[index++], addrbuf, &portbuf);
-        targets[cnt].sin_family = AF_INET;
-        targets[cnt].sin_addr.s_addr = inet_addr(addrbuf);
-        targets[cnt].sin_port = htons(portbuf);
-
-        if (index >= argc)
-            index = optind;
-
-#ifdef DEBUG
-        fprintf(stderr, "relaying to: %s:%u\n", addrbuf, portbuf);
-#endif
-    }
+    init_sending_sockets(targets, argc - optind, &(argv[optind]), pipe_size);
 
     // this one loops over all threads and starts them
     for (cnt = 0; cnt < num_threads; cnt++) {
@@ -730,23 +906,28 @@ int main(int argc, char *argv[]) {
 #endif
 
     // main thread is the 'extra' stats-thread. use it to catch/handle signals
-    fprintf(stderr, "#ts\tlistener\tin_bytecnt\tout_bytecnt\n");
+    fprintf(stderr, "#ts\tlistener\tin_bytecnt\tout_bytecnt\tin_packets\tout_packets\n");
     while (1) {
         if (reset_stats) {
             for (cnt = 0; cnt < num_threads; cnt++) {
                 tds[cnt].stats.in_bytecnt = 0;
                 tds[cnt].stats.out_bytecnt = 0;
+                tds[cnt].stats.in_packets = 0;
+                tds[cnt].stats.out_packets = 0;
             }
             reset_stats = 0;
         }
         if (stats_enabled) {
             now = time(0);
             for (cnt = 0; cnt < num_threads; cnt++) {
-                fprintf(stdout, "%lu\t%u\t%lu\t%lu\n",
+                fprintf(stdout, "%lu\t%u\t%lu\t%lu\t%lu\t%lu\n",
                         (unsigned long)now,
                         cnt,
                         tds[cnt].stats.in_bytecnt,
-                        tds[cnt].stats.out_bytecnt);
+                        tds[cnt].stats.out_bytecnt,
+                        tds[cnt].stats.in_packets,
+                        tds[cnt].stats.out_packets
+                        );
             }
         }
 
