@@ -774,7 +774,8 @@ void sig_handler_toggle_optional_output(int signum) {
 void usage(int argc, char *argv[]) {
     fprintf(stderr, "usage: %s -l <listenaddr:port> -m <r|d> -n <num_threads> "
                     "[-H] [-L] <targetaddr:port> [targetaddr:port [...]]\n"
-                    "\tNote: num_threads must be >= number of target addresses", argv[0]);
+                    "\tNote: num_threads must be >= number of target "
+                    "addresses\n", argv[0]);
     exit(1);
 }
 
