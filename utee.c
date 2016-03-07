@@ -949,5 +949,6 @@ int main(int argc, char *argv[]) {
         sleep(1);
     }
 
+    pthread_exit(NULL);
     return 0;
 }
