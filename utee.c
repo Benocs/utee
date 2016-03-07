@@ -194,13 +194,13 @@ void setup_udp_header(struct udphdr *udph, uint16_t udp_payload_len,
     update_udp_header(udph, udp_payload_len, source, dest);
 }
 
-struct s_target* hash_based_output(struct sockaddr_storage *source_addr,
+struct s_target* hash_based_output(struct sockaddr_storage *their_addr,
                                            struct s_thread_data* td) {
 
     uint32_t hashvalue = 0;
     uint32_t target = 0;
 
-    uint32_t tmp = ntohl(((struct sockaddr_in*)source_addr)->sin_addr.s_addr);
+    uint32_t tmp = ntohl(((struct sockaddr_in*)their_addr)->sin_addr.s_addr);
 
     // (key, keylen, num_bkts, hashv, bkt)
     HASH_ADDR(
@@ -284,6 +284,8 @@ struct s_hashable* ht_get_add(struct s_hashable **ht, uint32_t addr, struct s_ta
 }
 
 void *tee(void *arg0) {
+    // TODO: refactor socket names (src, dest, ...)
+
     struct s_thread_data *td = (struct s_thread_data *)arg0;
     struct s_features *features = &(td->features);
     struct s_statistics *stats = &(td->stats);
@@ -292,8 +294,8 @@ void *tee(void *arg0) {
 
     // incoming packets
     int numbytes = 0;
-    struct sockaddr_storage source_addr;
-    socklen_t addr_len = sizeof(source_addr);
+    struct sockaddr_storage their_addr;
+    socklen_t addr_len = sizeof(their_addr);
 
     // outgoing packets
     char datagram[BUFLEN];
@@ -303,7 +305,7 @@ void *tee(void *arg0) {
 
 #if defined ENABLE_IPV6
 #else
-    struct sockaddr_in *target_addr = (struct sockaddr_in *)&(target->dest);
+    struct sockaddr_in *sin = (struct sockaddr_in *)&(target->dest);
 #endif
 
     memset(datagram, 0, BUFLEN);
@@ -343,7 +345,7 @@ void *tee(void *arg0) {
 
     while (1) {
         if ((numbytes = recvfrom(td->sockfd, data, BUFLEN-sizeof(struct iphdr)-sizeof(struct udphdr), 0,
-            (struct sockaddr *)&source_addr, &addr_len)) == -1) {
+            (struct sockaddr *)&their_addr, &addr_len)) == -1) {
             perror("recvfrom");
             continue;
         }
@@ -373,13 +375,13 @@ void *tee(void *arg0) {
         stats->in_packets++;
 
         if (features->hash_based_dist || features->load_balanced_dist) {
-            target = (struct s_target*)hash_based_output(&source_addr, td);
-            target_addr = (struct sockaddr_in*)&(target->dest);
+            target = (struct s_target*)hash_based_output(&their_addr, td);
+            sin = (struct sockaddr_in*)&(target->dest);
         }
 
         if (features->load_balanced_dist) {
             ht_e = (struct s_hashable*) ht_get_add(hashtable,
-                   ((struct sockaddr_in*)&source_addr)->sin_addr.s_addr,
+                   ((struct sockaddr_in*)&their_addr)->sin_addr.s_addr,
                    target, 0);
 
             if (ht_e == NULL) {
@@ -387,7 +389,7 @@ void *tee(void *arg0) {
                 exit(1);
             }
             target = ht_e->target;
-            target_addr = (struct sockaddr_in*)&(target->dest);
+            sin = (struct sockaddr_in*)&(target->dest);
         }
 
 #if defined(DEBUG) || defined(HASH_DEBUG)
@@ -395,24 +397,24 @@ void *tee(void *arg0) {
             fprintf(stderr, "listener %d: hash result for addr: target: %s:%u (count: %lu)\n",
                     td->thread_id,
                     inet_ntop(AF_INET,
-                        get_in_addr((struct sockaddr *)target_addr),
+                        get_in_addr((struct sockaddr *)sin),
                         addrbuf1, sizeof(addrbuf1)),
-                    ntohs(((struct sockaddr_in*)target_addr)->sin_port),
+                    ntohs(((struct sockaddr_in*)sin)->sin_port),
                     ht_e->pkt_cnt);
 #endif
 
-        update_udp_header(udph, numbytes, ((struct sockaddr_in*)&source_addr)->sin_port, target_addr->sin_port);
+        update_udp_header(udph, numbytes, ((struct sockaddr_in*)&their_addr)->sin_port, sin->sin_port);
         update_ip_header(iph, sizeof(struct udphdr) + numbytes,
-                         ((struct sockaddr_in*)&source_addr)->sin_addr.s_addr,
-                         target_addr->sin_addr.s_addr);
+                         ((struct sockaddr_in*)&their_addr)->sin_addr.s_addr,
+                         sin->sin_addr.s_addr);
 
 #ifdef DEBUG
         fprintf(stderr, "listener %d: got packet from %s:%d\n",
             td->thread_id,
-            inet_ntop(source_addr.ss_family,
-                get_in_addr((struct sockaddr *)&source_addr),
+            inet_ntop(their_addr.ss_family,
+                get_in_addr((struct sockaddr *)&their_addr),
                 addrbuf0, sizeof(addrbuf0)),
-            ntohs(((struct sockaddr_in*)&source_addr)->sin_port));
+            ntohs(((struct sockaddr_in*)&their_addr)->sin_port));
         fprintf(stderr, "listener %d: packet is %d bytes long\n", td->thread_id, numbytes);
         fprintf(stderr, "listener %d: sending packet: %s:%u => %s:%u: len: %u\n",
             td->thread_id,
@@ -440,7 +442,7 @@ void *tee(void *arg0) {
             } while (retval <= 0);
 #endif
             int32_t written;
-            if ((written = sendto(target->fd, datagram, iph->tot_len, 0, (struct sockaddr *) target_addr, sizeof(*target_addr))) < 0) {
+            if ((written = sendto(target->fd, datagram, iph->tot_len, 0, (struct sockaddr *) sin, sizeof(*sin))) < 0) {
                 perror("sendto failed");
                 fprintf(stderr, "%lu - listener %d: error in write %s - %d\n", time(NULL), td->thread_id, strerror(errno), errno);
 #ifdef USE_SELECT
@@ -488,14 +490,14 @@ void *duplicate(void *arg0) {
 
     // incoming packets
     int numbytes = 0;
-    struct sockaddr_storage source_addr;
-    socklen_t addr_len = sizeof(source_addr);
+    struct sockaddr_storage their_addr;
+    socklen_t addr_len = sizeof(their_addr);
 
     // outgoing packets
     char datagram[BUFLEN];
     struct iphdr *iph = (struct iphdr *)datagram;
     struct udphdr *udph = (/*u_int8_t*/void *)iph + sizeof(struct iphdr);
-    struct sockaddr_in target_addr;
+    struct sockaddr_in sin;
 
     memset(datagram, 0, BUFLEN);
     // Set appropriate fields in headers
@@ -511,7 +513,7 @@ void *duplicate(void *arg0) {
 
     while (1) {
         if ((numbytes = recvfrom(td->sockfd, data, BUFLEN-sizeof(struct iphdr)-sizeof(struct udphdr), 0,
-            (struct sockaddr *)&source_addr, &addr_len)) == -1) {
+            (struct sockaddr *)&their_addr, &addr_len)) == -1) {
             perror("recvfrom");
             //exit(1);
             continue;
@@ -531,8 +533,8 @@ void *duplicate(void *arg0) {
         char addrbuf1[INET6_ADDRSTRLEN];
         fprintf(stderr, "listener %d: got packet from %s\n",
             td->thread_id,
-            inet_ntop(source_addr.ss_family,
-                get_in_addr((struct sockaddr *)&source_addr),
+            inet_ntop(their_addr.ss_family,
+                get_in_addr((struct sockaddr *)&their_addr),
                 addrbuf0, sizeof(addrbuf0)));
         fprintf(stderr, "listener %d: packet is %d bytes long\n", td->thread_id, numbytes);
         fprintf(stderr, "listener %d: packet contains \"%s\"\n", td->thread_id, data);
@@ -547,12 +549,12 @@ void *duplicate(void *arg0) {
         // if yes, iterate over remaining targets and also send packets to them
         for (cnt=0; cnt < td->num_targets; cnt++) {
 
-            target_addr = td->targets[cnt];
+            sin = td->targets[cnt];
 
-            update_udp_header(udph, numbytes, ((struct sockaddr_in*)&source_addr)->sin_port, target_addr.sin_port);
+            update_udp_header(udph, numbytes, ((struct sockaddr_in*)&their_addr)->sin_port, sin.sin_port);
             update_ip_header(iph, sizeof(struct udphdr) + numbytes,
-                            ((struct sockaddr_in*)&source_addr)->sin_addr.s_addr,
-                            target_addr.sin_addr.s_addr);
+                            ((struct sockaddr_in*)&their_addr)->sin_addr.s_addr,
+                            sin.sin_addr.s_addr);
 
 #ifdef DEBUG
             fprintf(stderr, "listener %d: sending packet: %s:%u => %s:%u: len: %u\n",
@@ -568,7 +570,7 @@ void *duplicate(void *arg0) {
                 iph->tot_len);
 #endif
 
-            if (sendto(ssock, datagram, iph->tot_len, 0, (struct sockaddr *) &target_addr, sizeof(target_addr)) < 0) {
+            if (sendto(ssock, datagram, iph->tot_len, 0, (struct sockaddr *) &sin, sizeof(sin)) < 0) {
                 perror("sendto failed");
                 fprintf(stderr, "pktlen: %u\n", iph->tot_len);
             }
@@ -752,23 +754,6 @@ int open_listener_socket(char* laddr, int lport, uint32_t pipe_size) {
     return lsock;
 }
 
-uint8_t check_thread_counters(struct s_thread_data* tds, uint16_t num_threads, uint64_t threshold) {
-    uint16_t cnt;
-    //struct s_statistics {
-    //    uint64_t in_bytecnt;
-    //    uint64_t out_bytecnt;
-    //    uint64_t in_packets;
-    //    uint64_t out_packets;
-    //};
-
-    for (cnt = 0; cnt < num_threads; cnt++) {
-        if (tds[cnt].stats.out_packets >= threshold) {
-            fprintf(stderr, "(cnt >= threshold for thread: %lu: %lu\n", cnt, 
-        }
-    }
-    return 0;
-}
-
 // variables that are changed when a signal arrives
 uint8_t stats_enabled = 0;
 uint8_t reset_stats = 0;
@@ -824,17 +809,6 @@ int main(int argc, char *argv[]) {
 
     uint8_t loadbalanced_dist_enabled = 0;
     uint8_t hash_based_dist_enabled = 0;
-
-    struct s_hashable* master_hashtable = NULL;
-    /*
-    struct s_hashable {
-        // TODO: if there shall be IPv6-support, increase the address space
-        uint32_t addr;
-        struct s_target* target;
-        uint64_t pkt_cnt;
-        UT_hash_handle hh;
-    };
-    */
 
     // 64 MB SND/RCV buffers
     uint32_t pipe_size = 67108864;
@@ -960,7 +934,6 @@ int main(int argc, char *argv[]) {
             }
             reset_stats = 0;
         }
-
         if (stats_enabled) {
             now = time(0);
             for (cnt = 0; cnt < num_threads; cnt++) {
@@ -973,10 +946,6 @@ int main(int argc, char *argv[]) {
                         tds[cnt].stats.out_packets
                         );
             }
-        }
-
-        if (hash_based_dist_enabled) {
-            check_thread_counters(tds, num_threads);
         }
 
         sleep(1);
