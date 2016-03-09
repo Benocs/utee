@@ -22,7 +22,7 @@ log_flags="-DLOG_INFO"
 #
 # configure hash functions for address hashing and for hashmap key hashing
 #
-hash_flags="-DHASH_ADDR=HASH_JEN_32 -DHASH_FUNCTION=HASH_JEN"
+hash_flags="-DHASH_ADDR=HASH_MOD -DHASH_FUNCTION=HASH_JEN"
 
 #
 # optional feature switches
