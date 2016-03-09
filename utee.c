@@ -898,7 +898,7 @@ int open_listener_socket(char* laddr, int lport, uint32_t pipe_size) {
     return lsock;
 }
 
-uint8_t check_thread_counters(struct s_thread_data* tds, uint16_t num_threads,
+uint8_t load_balance(struct s_thread_data* tds, uint16_t num_threads,
         uint64_t threshold, double reorder_threshold, uint64_t* last_threshold,
         struct s_hashable** master_hashtable) {
 
@@ -955,7 +955,7 @@ uint8_t check_thread_counters(struct s_thread_data* tds, uint16_t num_threads,
         }
 
 #if defined(DEBUG)
-        fprintf(stderr, "check_thread_counters: out_min: %s:%u (%lu), "
+        fprintf(stderr, "load_balance: out_min: %s:%u (%lu), "
                 "out_max: %s:%u (%lu)\n",
                 inet_ntop(AF_INET,
                     get_in_addr((struct sockaddr *)&(target_min->dest)),
@@ -1217,7 +1217,7 @@ int main(int argc, char *argv[]) {
         }
 
         if (loadbalanced_dist_enabled) {
-            check_thread_counters(tds, num_threads, 1e3, 1.05, &last_threshold,
+            load_balance(tds, num_threads, 1e3, 1.05, &last_threshold,
                     &master_hashtable);
         }
 
