@@ -82,11 +82,6 @@ do {                                                                          \
 #define HASH_ADDR HASH_MOD
 #endif
 
-struct s_statistics {
-    uint64_t bytecnt;
-    uint64_t packetcnt;
-};
-
 struct s_target {
 #if defined ENABLE_IPV6
     struct sockaddr_storage dest;
@@ -120,9 +115,6 @@ struct s_thread_data {
     int sockfd;
     struct s_target* targets;
     uint32_t num_targets;
-    // per thread stats
-    struct s_statistics in_stats;
-    struct s_statistics out_stats;
     struct s_features features;
     struct s_hashable* hashtable;
 
@@ -132,8 +124,6 @@ struct s_thread_data {
 };
 
 // variables that are changed when a signal arrives
-uint8_t stats_enabled = 0;
-uint8_t reset_stats = 0;
 uint8_t optional_output_enabled = 0;
 
 struct s_thread_data tds[MAXTHREADS];
@@ -479,8 +469,6 @@ void ht_delete_all(struct s_hashable *ht) {
 void *tee(void *arg0) {
     struct s_thread_data *td = (struct s_thread_data *)arg0;
     struct s_features *features = &(td->features);
-    struct s_statistics *thread_in_stats = &(td->in_stats);
-    struct s_statistics *thread_out_stats = &(td->out_stats);
     struct s_hashable** hashtable = &(td->hashtable);
     struct s_hashable* ht_e;
 
@@ -597,9 +585,6 @@ void *tee(void *arg0) {
 
         data[numbytes] = '\0';
 
-        thread_in_stats->bytecnt += sizeof(struct iphdr) + sizeof(struct udphdr) + numbytes;
-        thread_in_stats->packetcnt++;
-
         if (features->hash_based_dist || features->load_balanced_dist) {
             target = (struct s_target*)hash_based_output(&source_addr, td);
             target_addr = (struct sockaddr_in*)&(target->dest);
@@ -680,9 +665,6 @@ void *tee(void *arg0) {
 #endif
             }
             else {
-                thread_out_stats->bytecnt += sizeof(struct iphdr) + sizeof(struct udphdr) + numbytes;
-                thread_out_stats->packetcnt++;
-
                 if (features->load_balanced_dist) {
                     // NOTE: some small errors / off-by-sth is allowed. no mutex
                     // pthread_mutex_lock(&(td->mutex_read_tds));
@@ -729,7 +711,6 @@ void *duplicate(void *arg0) {
 
     struct s_thread_data *td = (struct s_thread_data *)arg0;
     struct s_features *features = &(td->features);
-    struct s_statistics *stats = &(td->stats);
 
     // incoming packets
     int numbytes = 0;
@@ -784,10 +765,6 @@ void *duplicate(void *arg0) {
         fprintf(stderr, "listener %d: crafting new packet...\n", td->thread_id);
 #endif
 
-        stats->in_bytecnt += sizeof(struct iphdr) + sizeof(struct udphdr) + numbytes;
-        stats->in_packets++;
-
-        // get main output: targets[0]
         // check whether features->duplicate == 1
         // if yes, iterate over remaining targets and also send packets to them
         for (cnt=0; cnt < td->num_targets; cnt++) {
@@ -816,10 +793,6 @@ void *duplicate(void *arg0) {
             if (sendto(ssock, datagram, iph->tot_len, 0, (struct sockaddr *) &target_addr, sizeof(target_addr)) < 0) {
                 perror("sendto failed");
                 fprintf(stderr, "pktlen: %u\n", iph->tot_len);
-            }
-            else {
-                stats->out_bytecnt += sizeof(struct iphdr) + sizeof(struct udphdr) + numbytes;
-                stats->out_packets++;
             }
 
             if (!(features->duplicate))
@@ -1217,16 +1190,6 @@ uint8_t load_balance(struct s_thread_data* tds, uint16_t num_threads,
     return time_to_load_balance;
 }
 
-void sig_handler_toggle_stats(int signum) {
-    stats_enabled = (!stats_enabled);
-    fprintf(stderr, "toggling stats output: %u\n", stats_enabled);
-}
-
-void sig_handler_reset_stats(int signum) {
-    fprintf(stderr, "resetting stats\n");
-    reset_stats = 1;
-}
-
 void sig_handler_toggle_optional_output(int signum) {
     uint16_t cnt;
 
@@ -1274,8 +1237,6 @@ int main(int argc, char *argv[]) {
 
     // 64 MB SND/RCV buffers
     uint32_t pipe_size = 67108864;
-
-    time_t now;
 
     int c;
 
@@ -1347,9 +1308,7 @@ int main(int argc, char *argv[]) {
     if (mode == 0xFF || num_threads == 0 || listenport == 0 || (argc - optind > num_threads))
         usage(argc, argv);
 
-    signal(SIGUSR1, sig_handler_toggle_stats);
-    signal(SIGALRM, sig_handler_reset_stats);
-    signal(SIGUSR2, sig_handler_toggle_optional_output);
+    signal(SIGUSR1, sig_handler_toggle_optional_output);
 
 #ifdef DEBUG
     fprintf(stderr, "setting up listener socket...\n");
@@ -1402,30 +1361,6 @@ int main(int argc, char *argv[]) {
     // main thread is the 'extra' stats-thread. use it to catch/handle signals
     fprintf(stderr, "#ts\tlistener\tin_bytecnt\tout_bytecnt\tin_packets\tout_packets\n");
     while (1) {
-
-        if (reset_stats) {
-            for (cnt = 0; cnt < num_threads; cnt++) {
-                tds[cnt].in_stats.bytecnt = 0;
-                tds[cnt].out_stats.bytecnt = 0;
-                tds[cnt].in_stats.packetcnt = 0;
-                tds[cnt].out_stats.packetcnt = 0;
-            }
-            reset_stats = 0;
-        }
-
-        if (stats_enabled) {
-            now = time(0);
-            for (cnt = 0; cnt < num_threads; cnt++) {
-                fprintf(stdout, "%lu\t%u\t%lu\t%lu\t%lu\t%lu\n",
-                        (unsigned long)now,
-                        cnt,
-                        tds[cnt].in_stats.bytecnt,
-                        tds[cnt].out_stats.bytecnt,
-                        tds[cnt].in_stats.packetcnt,
-                        tds[cnt].out_stats.packetcnt
-                        );
-            }
-        }
 
         if (loadbalanced_dist_enabled) {
             load_balance(tds, num_threads, threshold, reorder_threshold,
