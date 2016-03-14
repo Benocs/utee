@@ -29,6 +29,7 @@
 #include <sys/select.h>
 #include <time.h>
 
+#include "smp.h"
 #include "uthash.h"
 
 #ifndef GIT_REVISION
@@ -45,6 +46,7 @@
 
 #define BUFLEN 4096
 #define MAXTHREADS 1024
+#define MAXOPTIMIZATIONITERATIONS 20
 
 #define HASH_MOD(key, keylen, num_bkts, hashv, bkt)                           \
 do {                                                                          \
@@ -241,12 +243,14 @@ struct s_hashable* ht_get(struct s_hashable **ht, uint32_t addr) {
 }
 
 struct s_hashable* ht_get_add(struct s_hashable **ht, uint32_t addr, struct s_target* target,
-        uint64_t packetcnt, uint8_t overwrite) {
+        uint64_t packetcnt, uint8_t overwrite, uint8_t sum_packetcnt) {
     struct s_hashable *ht_e;
 
 #if defined(DEBUG) || defined(HASH_DEBUG)
     char addrbuf0[INET6_ADDRSTRLEN];
     char addrbuf1[INET6_ADDRSTRLEN];
+#endif
+#if defined(DEBUG) || defined(HASH_DEBUG)
     uint8_t added = 0;
 #endif
 
@@ -271,24 +275,37 @@ struct s_hashable* ht_get_add(struct s_hashable **ht, uint32_t addr, struct s_ta
         ht_e->packetcnt = packetcnt;
         HASH_ADD_INT(*ht, addr, ht_e);
     }
-
-    if (overwrite) {
+    else if (overwrite) {
         ht_e->target = target;
-        ht_e->packetcnt = packetcnt;
+        if (sum_packetcnt) {
+#if defined(DEBUG) || defined(HASH_DEBUG)
+            fprintf(stderr, "ht: summing packetcnt. %lu + %lu = ", ht_e->packetcnt, packetcnt);
+#endif
+            ht_e->packetcnt += packetcnt;
+#if defined(DEBUG) || defined(HASH_DEBUG)
+            fprintf(stderr, "%lu\n", ht_e->packetcnt);
+#endif
+        }
+        else {
+#if defined(DEBUG) || defined(HASH_DEBUG)
+            fprintf(stderr, "ht: overwriting packetcnt. old: %lu  new: %lu\n", ht_e->packetcnt, packetcnt);
+#endif
+            ht_e->packetcnt = packetcnt;
+        }
 
 #if defined(DEBUG) || defined(HASH_DEBUG)
-        if (!added)
-            fprintf(stderr, "ht: addr: %s found. overwriting. using new output: %s:%u\n",
-                inet_ntop(AF_INET, (struct sockaddr_in *)&(addr), addrbuf0,
-                    sizeof(addrbuf0)),
-                inet_ntop(AF_INET,
-                    get_in_addr((struct sockaddr *)&(ht_e->target->dest)),
-                    addrbuf1, sizeof(addrbuf1)),
-                ntohs(((struct sockaddr_in *)&(target->dest))->sin_port));
+        fprintf(stderr, "ht: addr: %s found. overwriting. using new output: %s:%u\n",
+            inet_ntop(AF_INET, (struct sockaddr_in *)&(addr), addrbuf0,
+                sizeof(addrbuf0)),
+            inet_ntop(AF_INET,
+                get_in_addr((struct sockaddr *)&(ht_e->target->dest)),
+                addrbuf1, sizeof(addrbuf1)),
+            ntohs(((struct sockaddr_in *)&(target->dest))->sin_port));
 #endif
     }
+
 #if defined(DEBUG) || defined(HASH_DEBUG)
-    else if (!added) {
+    if (!added) {
         fprintf(stderr, "ht: addr: %s found. not overwriting. using output: %s:%u\n",
             inet_ntop(AF_INET, (struct sockaddr_in *)&(addr), addrbuf0,
                 sizeof(addrbuf0)),
@@ -367,6 +384,66 @@ void ht_find_max(struct s_hashable *ht,
 #endif
 }
 
+void ht_find_best(struct s_hashable *ht,
+    struct s_target *target,
+    uint64_t excess_packets,
+    struct s_hashable *ht_e_best) {
+
+    struct s_hashable *s;
+
+    uint64_t abs_current = excess_packets;
+    uint64_t abs_candidate;
+
+#if defined(DEBUG) || defined(HASH_DEBUG)
+    char addrbuf0[INET6_ADDRSTRLEN];
+    char addrbuf1[INET6_ADDRSTRLEN];
+
+    uint64_t tcnt = 0;
+
+    fprintf(stderr, "ht_find_best: excess_packets: %lu\n", excess_packets);
+#endif
+
+    ht_e_best->addr = 0;
+    ht_e_best->packetcnt = 0;
+
+    for(s=ht; s != NULL; s=s->hh.next) {
+        // not our target. skip
+        if (s->target != target)
+            continue;
+
+#if defined(DEBUG) || defined(HASH_DEBUG)
+        tcnt += s->packetcnt;
+#endif
+        // do not ever over shoot
+        if (s->packetcnt > excess_packets)
+            continue;
+
+        abs_candidate = excess_packets - s->packetcnt;
+
+        if (abs_candidate < abs_current) {
+            abs_current = abs_candidate;
+
+            ht_e_best->addr = s->addr;
+            ht_e_best->packetcnt = s->packetcnt;
+            ht_e_best->target->dest = s->target->dest;
+            ht_e_best->target->dest_len = s->target->dest_len;
+            ht_e_best->target->fd = s->target->fd;
+        }
+    }
+
+#if defined(DEBUG) || defined(HASH_DEBUG)
+    fprintf(stderr, "ht_find_best: tot target pkts: %lu\n", tcnt);
+    fprintf(stderr, "ht_find_best: best: count: %lu\taddr: %s, target: %s:%u\n",
+        ht_e_best->packetcnt,
+        inet_ntop(AF_INET, (struct sockaddr_in *)&(ht_e_best->addr), addrbuf0,
+            sizeof(addrbuf0)),
+        inet_ntop(AF_INET,
+            get_in_addr((struct sockaddr *)&(ht_e_best->target->dest)),
+            addrbuf1, sizeof(addrbuf1)),
+        ntohs(((struct sockaddr_in *)&(ht_e_best->target->dest))->sin_port));
+#endif
+}
+
 void ht_copy(struct s_hashable *ht_from, struct s_hashable **ht_to) {
     struct s_hashable *s;
 
@@ -375,7 +452,27 @@ void ht_copy(struct s_hashable *ht_from, struct s_hashable **ht_to) {
                 s->addr,
                 s->target,
                 s->packetcnt,
-                1);
+                1,
+                0);
+    }
+}
+
+void ht_reset_counters(struct s_hashable *ht) {
+    struct s_hashable *s;
+
+    for(s=ht; s != NULL; s=s->hh.next) {
+        s->packetcnt = 0;
+        // TODO: need memory barrier here as target is always shared between master and all threads
+        s->target->packetcnt = 0;
+    }
+}
+
+void ht_delete_all(struct s_hashable *ht) {
+    struct s_hashable *s, *tmp;
+
+    HASH_ITER(hh, ht, s, tmp) {
+        HASH_DEL(ht, s);
+        free(s);
     }
 }
 
@@ -409,10 +506,10 @@ void *tee(void *arg0) {
     setup_udp_header(udph, 0, 0, 0);
     char *data = (char *)udph + sizeof(struct udphdr);
 
-#if defined(DEBUG) || defined(DEBUG_ERRORS)
+#if defined(DEBUG) || defined(LOG_ERROR)
       char addrbuf0[INET6_ADDRSTRLEN];
 #endif
-#if defined(DEBUG) || defined(HASH_DEBUG) || defined(DEBUG_ERRORS)
+#if defined(DEBUG) || defined(HASH_DEBUG) || defined(LOG_ERROR)
       char addrbuf1[INET6_ADDRSTRLEN];
 #endif
 
@@ -440,34 +537,37 @@ void *tee(void *arg0) {
 
     while (1) {
         if (td->last_used_master_hashtable_idx != master_hashtable_idx) {
-            if (td->thread_id == 0) {
-#ifdef DEBUG
-                fprintf(stderr, "listener %d: new master hash map available (%u)\n",
-                        td->thread_id, master_hashtable_idx);
-
-                fprintf(stderr, "listener %d: current hashtable:\n",
-                        td->thread_id);
-                ht_iterate(td->hashtable);
-                fprintf(stderr, "listener %d: master hashtable:\n",
-                        td->thread_id);
-                ht_iterate(master_hashtable_ro);
+#ifdef LOG_DEBUG
+            fprintf(stderr, "listener %d: new master hash map available (%u)\n",
+                    td->thread_id, master_hashtable_idx);
+            fprintf(stderr, "listener %d: current hashtable:\n",
+                    td->thread_id);
+            ht_iterate(td->hashtable);
+            fprintf(stderr, "listener %d: master hashtable:\n",
+                    td->thread_id);
+            ht_iterate(master_hashtable_ro);
 #endif
 
-                ht_copy(master_hashtable_ro, hashtable);
-                td->hashtable = *hashtable;
+            // copy: from, to
+            ht_copy(master_hashtable_ro, hashtable);
+            td->hashtable = *hashtable;
+            hashtable = &(td->hashtable);
+            td->last_used_master_hashtable_idx = master_hashtable_idx;
 
 #ifdef DEBUG
+            fprintf(stderr, "listener %d: new hashtable:\n",
+                    td->thread_id);
+            ht_iterate(td->hashtable);
+            fprintf(stderr, "\n");
+
+#endif
+            // TODO: TMP: print hashtable of thread 0 (they're all the same)
+            if (td->thread_id == 0) {
                 fprintf(stderr, "listener %d: new hashtable:\n",
                         td->thread_id);
                 ht_iterate(td->hashtable);
                 fprintf(stderr, "\n");
-#endif
             }
-
-
-            td->hashtable = master_hashtable_ro;
-            hashtable = &(td->hashtable);
-            td->last_used_master_hashtable_idx = master_hashtable_idx;
         }
 
         if ((numbytes = recvfrom(td->sockfd, data, BUFLEN-sizeof(struct iphdr)-sizeof(struct udphdr), 0,
@@ -489,7 +589,7 @@ void *tee(void *arg0) {
 #endif
 
         if (numbytes > 1472) {
-#ifdef DEBUG_ERRORS
+#ifdef LOG_ERROR
             fprintf(stderr, "ERROR: listener %d: packet is %d bytes long cropping to 1472\n", td->thread_id, numbytes);
 #endif
             numbytes = 1472;
@@ -508,13 +608,12 @@ void *tee(void *arg0) {
         if (features->load_balanced_dist) {
             ht_e = (struct s_hashable*) ht_get_add(hashtable,
                    ((struct sockaddr_in*)&source_addr)->sin_addr.s_addr,
-                   target, 0, 0);
+                   target, 0, 0, 0);
 
             if (ht_e == NULL) {
-                fprintf(stderr, "listener %d: Error while adding element to hashtable\n", td->thread_id);
+                fprintf(stderr, "ERROR: listener %d: Error while adding element to hashtable\n", td->thread_id);
                 exit(1);
             }
-
 
             target = ht_e->target;
             target_addr = (struct sockaddr_in*)&(target->dest);
@@ -591,6 +690,7 @@ void *tee(void *arg0) {
                     // update per source packetcnt
                     ht_e->packetcnt++;
                     // update per target packetcnt
+                    // TODO: need memory barrier here as target is always shared between master and all threads
                     target->packetcnt++;
 
                     // pthread_mutex_unlock(&(td->mutex_read_tds));
@@ -600,7 +700,7 @@ void *tee(void *arg0) {
                     // TODO: handle this short write - TODO: how to handle?
                     //retval
 
-#ifdef DEBUG_ERRORS
+#ifdef LOG_ERROR
                     fprintf(stderr, "ERROR: listener %d: short write: sent packet: %s:%u => %s:%u: len: %u written: %d\n",
                         td->thread_id,
                         inet_ntop(AF_INET,
@@ -877,11 +977,6 @@ int open_listener_socket(char* laddr, int lport, uint32_t pipe_size) {
         getsockopt(lsock, SOL_SOCKET, SO_RCVBUF, &saved, &optlen);
         setsocksize(lsock, SOL_SOCKET, SO_RCVBUF, &pipe_size, optlen);
         getsockopt(lsock, SOL_SOCKET, SO_RCVBUF, &obtained, &optlen);
-
-        //if (obtained < saved) {
-        //    setsocksize(lsock, SOL_SOCKET, SO_RCVBUF, &saved, optlen);
-        //    getsockopt(lsock, SOL_SOCKET, SO_RCVBUF, &obtained, &optlen);
-        //}
 #ifdef LOG_INFO
         fprintf(stderr, "INFO: listening socket: pipe_size: obtained=%d target=%u saved=%u\n", obtained, pipe_size, saved);
 #endif
@@ -904,18 +999,32 @@ uint8_t load_balance(struct s_thread_data* tds, uint16_t num_threads,
 
     struct s_hashable *s;
 
+    uint16_t itcnt;
     uint16_t cnt;
     uint8_t time_to_load_balance = 0;
     uint8_t hit_reordering_threshold = 0;
 
-    struct s_target* target_min;
-    struct s_target* target_max;
+    struct s_hashable ht_e_best;
+    struct s_target target_ht_e_best;
+    ht_e_best.target = &target_ht_e_best;
 
-    struct s_hashable ht_e_max;
-    struct s_target target_hte_max;
-    ht_e_max.target = &target_hte_max;
+    // create a copy of current counters
+    // this allows for the modification independent of ongoing forwarding of packets
+    uint64_t per_target_pkt_cnt[MAXTHREADS];
 
-#if defined(DEBUG)
+    uint16_t target_min_idx;
+    uint16_t target_max_idx;
+
+    uint64_t tot_cnt = 0;
+
+    uint64_t excess_packets;
+
+    double ideal_avg = (1 / (double)tds[0].num_targets);
+    double target_avg;
+
+    static uint64_t global_total_cnt = 0;
+
+#if defined(DEBUG) || defined(LOG_INFO)
     char addrbuf0[INET6_ADDRSTRLEN];
     char addrbuf1[INET6_ADDRSTRLEN];
     char addrbuf2[INET6_ADDRSTRLEN];
@@ -927,97 +1036,183 @@ uint8_t load_balance(struct s_thread_data* tds, uint16_t num_threads,
     if (num_threads == 0)
         return 0;
 
-    // check whether it's time to load balance
+    // create a copy of current counters
+    // this allows for the modification independent of ongoing forwarding of packets
+    for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
+        per_target_pkt_cnt[cnt] = tds[0].targets[cnt].packetcnt;
+        tot_cnt += per_target_pkt_cnt[cnt];
+    }
+
+    // early abort if no packets were forwarded in last iteration
+    if (!tot_cnt)
+        return 0;
+
+    if (tot_cnt > threshold)
+        time_to_load_balance = 1;
+
+    if (!time_to_load_balance)
+        return 0;
+
+#if defined(DEBUG)
+    fprintf(stderr, "len(master_hastable) before thread merging: %u\n", HASH_COUNT(*master_hashtable));
+#endif
+    // merge hashmaps
     for (cnt = 0; cnt < num_threads; cnt++) {
-        if (tds[cnt].out_stats.packetcnt >= (threshold + (*last_threshold))) {
-            (*last_threshold) = tds[cnt].out_stats.packetcnt - \
-                                (tds[cnt].out_stats.packetcnt % threshold);
-            fprintf(stderr, "cnt >= threshold for thread: %u: %lu. last_t: %lu\n",
-                    cnt, tds[cnt].out_stats.packetcnt, *last_threshold);
-            time_to_load_balance = 1;
-            break;
+#if defined(DEBUG)
+        fprintf(stderr, "merging thread hash maps into master. thread: %u\n", cnt);
+#endif
+#if defined(LOG_ERROR)
+        if (tds[cnt].hashtable == *master_hashtable)
+            fprintf(stderr, "[ERR] master hash table is same as thread's %u table\n", cnt);
+#endif
+#if defined(DEBUG)
+        fprintf(stderr, "tds[%u].hashtable: %p - master: %p\n", cnt, tds[cnt].hashtable, *master_hashtable);
+#endif
+        for(s=tds[cnt].hashtable; s != NULL; s=s->hh.next) {
+            // NOTE: need smp_atomic_inc for target-cnt as it is shared between all threads
+            // NOTE: don't neet smp_atomic_inc for src as they are thread-local in hash maps
+            // only copy ht_e if it has seen any packets within the last iteration
+            if (s->packetcnt) {
+                ht_get_add(master_hashtable, s->addr, s->target, s->packetcnt, 1, 1);
+            }
         }
     }
 
-    if (time_to_load_balance) {
-        // find target with smallest counter and target with largest counter
+#if defined(DEBUG)
+    fprintf(stderr, "len(master_hastable) after thread merging: %u\n", HASH_COUNT(*master_hashtable));
+#endif
+
+    for(s=*master_hashtable; s != NULL; s=s->hh.next) {
+        global_total_cnt += s->packetcnt;
+    }
+
+#if defined(LOG_INFO)
+    // only print stats if there were any forwarded packets since last optimization iteration
+    if (tot_cnt) {
+        fprintf(stderr, "lb cnt stats. ideal=%.4f tot=%lu\n\t", ideal_avg, global_total_cnt);
         for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
-            if (cnt == 0) {
-                target_min = &(tds[0].targets[cnt]);
-                target_max = &(tds[0].targets[cnt]);
-            }
-            else {
-                if (tds[0].targets[cnt].packetcnt < target_min->packetcnt)
-                    target_min = &(tds[0].targets[cnt]);
-                if (tds[0].targets[cnt].packetcnt > target_max->packetcnt)
-                    target_max = &(tds[0].targets[cnt]);
-            }
+            fprintf(stderr, "%2u=%.4f ", cnt, per_target_pkt_cnt[cnt] / (double)tot_cnt);
+            if (cnt && (cnt+1) % 8 == 0)
+                fprintf(stderr, "\n\t");
         }
+        fprintf(stderr, "\n");
+    }
+#endif
+
+    for (itcnt = 0; itcnt < MAXOPTIMIZATIONITERATIONS; itcnt++) {
+#if defined(LOG_INFO)
+        fprintf(stderr, "optimization iteration: %u of max %u\n",
+                itcnt+1, MAXOPTIMIZATIONITERATIONS);
+#endif
+
+        // find target with smallest counter and target with largest counter
+        target_min_idx = 0;
+        target_max_idx = 0;
+        for (cnt = 1; cnt < tds[0].num_targets; cnt++ ) {
+            if (per_target_pkt_cnt[cnt] < per_target_pkt_cnt[target_min_idx])
+                target_min_idx = cnt;
+            if (per_target_pkt_cnt[cnt] > per_target_pkt_cnt[target_max_idx])
+                target_max_idx = cnt;
+        }
+
+        target_avg = per_target_pkt_cnt[target_min_idx] / (double)tot_cnt;
+        if (((target_avg / ideal_avg) < 1) && (1 - (target_avg / ideal_avg) > reorder_threshold))
+            hit_reordering_threshold = 1;
+        else
+            hit_reordering_threshold = 0;
+#if defined(DEBUG)
+        fprintf(stderr, "hit_reordering_threshold: %u\n", hit_reordering_threshold);
+#endif
 
 #if defined(DEBUG)
         fprintf(stderr, "load_balance: out_min: %s:%u (%lu), "
                 "out_max: %s:%u (%lu)\n",
                 inet_ntop(AF_INET,
-                    get_in_addr((struct sockaddr *)&(target_min->dest)),
+                    get_in_addr((struct sockaddr *)&(tds[0].targets[target_min_idx].dest)),
                     addrbuf0, sizeof(addrbuf0)),
-                ntohs(((struct sockaddr_in *)&(target_min->dest))->sin_port),
-                target_min->packetcnt,
+                ntohs(((struct sockaddr_in *)&(tds[0].targets[target_min_idx].dest))->sin_port),
+                per_target_pkt_cnt[target_min_idx],
                 inet_ntop(AF_INET,
-                    get_in_addr((struct sockaddr *)&(target_max->dest)),
+                    get_in_addr((struct sockaddr *)&(tds[0].targets[target_max_idx].dest)),
                     addrbuf1, sizeof(addrbuf1)),
-                ntohs(((struct sockaddr_in *)&(target_max->dest))->sin_port),
-                target_max->packetcnt
+                ntohs(((struct sockaddr_in *)&(tds[0].targets[target_max_idx].dest))->sin_port),
+                per_target_pkt_cnt[target_max_idx]
                 );
 #endif
+        // if !hit_reordering_threshold, abort optimization
+        if (!hit_reordering_threshold)
+            break;
 
-        // merge hashmaps
-        for (cnt = 0; cnt < num_threads; cnt++) {
-            for(s=tds[cnt].hashtable; s != NULL; s=s->hh.next) {
-                ht_get_add(master_hashtable, s->addr, s->target, s->packetcnt, 1);
-            }
-        }
-
-        // find biggest hitter of biggest target (target_max)
-        //mutex_read_tds
-        ht_find_max(*master_hashtable,
-            target_max,
-            &ht_e_max);
-
-#ifdef DEBUG
-        fprintf(stderr, "reorder threshold: %f\n",
-                (target_max->packetcnt / (double)target_min->packetcnt));
+        // calculate ideal excess lines/hits
+        excess_packets = per_target_pkt_cnt[target_max_idx] - per_target_pkt_cnt[target_min_idx];
+#if defined(LOG_INFO)
+        fprintf(stderr, "line diff: %lu - min(%u): %lu, max(%u): %lu, trying to shift up to %lu pkts\n",
+                excess_packets,
+                target_min_idx,
+                per_target_pkt_cnt[target_min_idx],
+                target_max_idx,
+                per_target_pkt_cnt[target_max_idx],
+                excess_packets/2);
 #endif
-        // check if reorder threshold is reached
-        if ((target_max->packetcnt / (double)target_min->packetcnt) >
-                reorder_threshold) {
-            hit_reordering_threshold = 1;
+        ht_find_best(*master_hashtable, &(tds[0].targets[target_max_idx]), excess_packets/2, &ht_e_best);
 
-#if defined(DEBUG)
-            fprintf(stderr, "moving high hitter: %s from: %s:%u to %s:%u\n",
-                inet_ntop(AF_INET, (struct sockaddr_in *)&(ht_e_max.addr), addrbuf0,
-                    sizeof(addrbuf0)),
-                inet_ntop(AF_INET,
-                    get_in_addr((struct sockaddr *)&(ht_e_max.target->dest)),
-                    addrbuf1, sizeof(addrbuf1)),
-                ntohs(((struct sockaddr_in *)&(ht_e_max.target->dest))->sin_port),
-                inet_ntop(AF_INET,
-                    get_in_addr((struct sockaddr *)&(target_min->dest)),
-                    addrbuf2, sizeof(addrbuf2)),
-                ntohs(((struct sockaddr_in *)&(target_min->dest))->sin_port));
+        // ht_find_best:
+        // find hitter in biggest target which is closest to excess_packets/2
+
+#if defined(LOG_INFO)
+        fprintf(stderr, "moving high hitter: %s from: %s:%u to %s:%u (count: %lu)\n",
+            inet_ntop(AF_INET, (struct sockaddr_in *)&(ht_e_best.addr), addrbuf0,
+                sizeof(addrbuf0)),
+
+            // from:
+            inet_ntop(AF_INET,
+                get_in_addr((struct sockaddr *)&(ht_e_best.target->dest)),
+                addrbuf1, sizeof(addrbuf1)),
+            ntohs(((struct sockaddr_in *)&(ht_e_best.target->dest))->sin_port),
+
+            // to:
+            inet_ntop(AF_INET,
+                get_in_addr((struct sockaddr *)&(tds[0].targets[target_min_idx].dest)),
+                addrbuf2, sizeof(addrbuf2)),
+            ntohs(((struct sockaddr_in *)&(tds[0].targets[target_min_idx].dest))->sin_port),
+
+            ht_e_best.packetcnt);
 #endif
-            // move exporter (in ht_e_max) from target_max to target_min
-            ht_e_max.target = target_min;
-            ht_get_add(master_hashtable,
-                    ht_e_max.addr,
-                    ht_e_max.target,
-                    ht_e_max.packetcnt,
-                    1);
 
-            master_hashtable_ro = *master_hashtable;
-            *master_hashtable = NULL;
-            master_hashtable_idx++;
-        }
+        // move exporter (in ht_e_best) from target_max to target_min
+        ht_e_best.target = &(tds[0].targets[target_min_idx]);
+        ht_get_add(master_hashtable,
+                ht_e_best.addr,
+                ht_e_best.target,
+                ht_e_best.packetcnt,
+                1,
+                0);
+
+        // refresh counters
+        per_target_pkt_cnt[target_max_idx] -= ht_e_best.packetcnt;
+        per_target_pkt_cnt[target_min_idx] += ht_e_best.packetcnt;
+
+    } // end of for (itcnt = 0; itcnt < MAXOPTIMIZATIONITERATIONS; itcnt++) {
+
+    // delete last ro-hashtable
+    ht_delete_all(master_hashtable_ro);
+    // reset all counters in next hashtable
+    ht_reset_counters(*master_hashtable);
+    // reset all thread counters
+    // TODO: need memory barrier here
+    for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
+        tds[0].targets[cnt].packetcnt = 0;
     }
+    fprintf(stderr, "\n===================================================\n");
+    // set next hashtable as ro
+    master_hashtable_ro = *master_hashtable;
+    // release master pointer to next hashtable
+    *master_hashtable = NULL;
+    // increase hashtable version to signal threads that a new version is available
+    master_hashtable_idx++;
+#if defined(DEBUG)
+    fprintf(stderr, "len(master_hastable) after swapping to ro: %u\n", HASH_COUNT(*master_hashtable));
+#endif
 
     return time_to_load_balance;
 }
@@ -1073,6 +1268,10 @@ int main(int argc, char *argv[]) {
     struct s_hashable* master_hashtable = NULL;
     uint64_t last_threshold = 0;
 
+    // default: load balance every 50e6 lines, min difference between targets: 10%
+    uint64_t threshold = 50e6;
+    double reorder_threshold = 0.1;
+
     // 64 MB SND/RCV buffers
     uint32_t pipe_size = 67108864;
 
@@ -1081,7 +1280,7 @@ int main(int argc, char *argv[]) {
     int c;
 
     opterr = 0;
-    while ((c = getopt (argc, argv, "l:m:n:LH")) != -1)
+    while ((c = getopt (argc, argv, "l:m:n:i:t:LH")) != -1)
     switch (c) {
         case 'l':
             split_addr(optarg, listenaddr, &listenport);
@@ -1129,6 +1328,18 @@ int main(int argc, char *argv[]) {
                     usage(argc, argv);
                 break;
             }
+        break;
+        case 'i':
+            threshold = atoi(optarg);
+#ifdef DEBUG
+            fprintf(stderr, "load balance every: %lu lines\n", threshold);
+#endif
+        break;
+        case 't':
+            reorder_threshold = atof(optarg);
+#ifdef DEBUG
+            fprintf(stderr, "load balance inter-target threshold: %.2f\n", reorder_threshold);
+#endif
         break;
         default:
             usage(argc, argv);
@@ -1217,8 +1428,8 @@ int main(int argc, char *argv[]) {
         }
 
         if (loadbalanced_dist_enabled) {
-            load_balance(tds, num_threads, 1e3, 1.05, &last_threshold,
-                    &master_hashtable);
+            load_balance(tds, num_threads, threshold, reorder_threshold,
+                    &last_threshold, &master_hashtable);
         }
 
         sleep(1);
