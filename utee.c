@@ -529,8 +529,6 @@ void *tee(void *arg0) {
 #ifdef DEBUG
             fprintf(stderr, "listener %d: new master hash map available (%lu)\n",
                     td->thread_id, atomic_read(&master_hashtable_idx));
-            fprintf(stderr, "listener %d: current hashtable:\n",
-                    td->thread_id);
 #endif
 
             // copy: from, to
