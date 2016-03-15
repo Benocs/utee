@@ -222,17 +222,15 @@ struct s_hashable* ht_get_add(struct s_hashable **ht, uint32_t addr, struct s_ta
         uint64_t packetcnt, uint8_t overwrite, uint8_t sum_packetcnt) {
     struct s_hashable *ht_e;
 
-#if defined(DEBUG) || defined(HASH_DEBUG)
+#if defined(HASH_DEBUG)
     char addrbuf0[INET6_ADDRSTRLEN];
     char addrbuf1[INET6_ADDRSTRLEN];
-#endif
-#if defined(DEBUG) || defined(HASH_DEBUG)
     uint8_t added = 0;
 #endif
 
     HASH_FIND_INT(*ht, &addr, ht_e);
     if (ht_e == NULL) {
-#if defined(DEBUG) || defined(HASH_DEBUG)
+#if defined(HASH_DEBUG)
         fprintf(stderr, "ht: addr: %s not found. adding output: %s:%u\n",
             inet_ntop(AF_INET, (struct sockaddr_in *)&(addr), addrbuf0,
                 sizeof(addrbuf0)),
@@ -254,24 +252,24 @@ struct s_hashable* ht_get_add(struct s_hashable **ht, uint32_t addr, struct s_ta
     else if (overwrite) {
         ht_e->target = target;
         if (sum_packetcnt) {
-#if defined(DEBUG) || defined(HASH_DEBUG)
+#if defined(HASH_DEBUG)
             fprintf(stderr, "ht: summing packetcnt. %lu + %lu = ",
                     atomic_read(&(ht_e->packetcnt)), packetcnt);
 #endif
             atomic_add(packetcnt, &(ht_e->packetcnt));
-#if defined(DEBUG) || defined(HASH_DEBUG)
+#if defined(HASH_DEBUG)
             fprintf(stderr, "%lu\n", atomic_read(&(ht_e->packetcnt)));
 #endif
         }
         else {
-#if defined(DEBUG) || defined(HASH_DEBUG)
+#if defined(HASH_DEBUG)
             fprintf(stderr, "ht: overwriting packetcnt. old: %lu  new: %lu\n",
                     atomic_read(&(ht_e->packetcnt)), packetcnt);
 #endif
             atomic_set(&(ht_e->packetcnt), packetcnt);
         }
 
-#if defined(DEBUG) || defined(HASH_DEBUG)
+#if defined(HASH_DEBUG)
         fprintf(stderr, "ht: addr: %s found. overwriting. using new output: %s:%u\n",
             inet_ntop(AF_INET, (struct sockaddr_in *)&(addr), addrbuf0,
                 sizeof(addrbuf0)),
@@ -282,7 +280,7 @@ struct s_hashable* ht_get_add(struct s_hashable **ht, uint32_t addr, struct s_ta
 #endif
     }
 
-#if defined(DEBUG) || defined(HASH_DEBUG)
+#if defined(HASH_DEBUG)
     if (!added) {
         fprintf(stderr, "ht: addr: %s found. not overwriting. using output: %s:%u\n",
             inet_ntop(AF_INET, (struct sockaddr_in *)&(addr), addrbuf0,
@@ -322,7 +320,7 @@ void ht_find_max(struct s_hashable *ht,
     struct s_hashable *s;
     struct s_hashable *t = *ht_e_max;
 
-#if defined(DEBUG) || defined(HASH_DEBUG)
+#if defined(HASH_DEBUG)
     char addrbuf0[INET6_ADDRSTRLEN];
     char addrbuf1[INET6_ADDRSTRLEN];
 #endif
@@ -332,7 +330,7 @@ void ht_find_max(struct s_hashable *ht,
             t = s;
         }
 
-#if defined(DEBUG) || defined(HASH_DEBUG)
+#if defined(HASH_DEBUG)
         fprintf(stderr, "ht_iter: count: %lu\taddr: %s, target: %s:%u\n",
             atomic_read(&(s->packetcnt)),
             inet_ntop(AF_INET, (struct sockaddr_in *)&(s->addr), addrbuf0,
@@ -347,7 +345,7 @@ void ht_find_max(struct s_hashable *ht,
     if (t != NULL) {
         *ht_e_max = t;
 
-#if defined(DEBUG) || defined(HASH_DEBUG)
+#if defined(HASH_DEBUG)
         fprintf(stderr, "ht_iter: max: count: %lu\taddr: %s, target: %s:%u\n",
             atomic_read(&(t->packetcnt)),
             inet_ntop(AF_INET, (struct sockaddr_in *)&(t->addr), addrbuf0,
@@ -371,7 +369,7 @@ void ht_find_best(struct s_hashable *ht,
     uint64_t abs_current = excess_packets;
     uint64_t abs_candidate;
 
-#if defined(DEBUG) || defined(HASH_DEBUG)
+#if defined(HASH_DEBUG)
     char addrbuf0[INET6_ADDRSTRLEN];
     char addrbuf1[INET6_ADDRSTRLEN];
 
@@ -385,7 +383,7 @@ void ht_find_best(struct s_hashable *ht,
         if (s->target != target)
             continue;
 
-#if defined(DEBUG) || defined(HASH_DEBUG)
+#if defined(HASH_DEBUG)
         tcnt += atomic_read(&(s->packetcnt));
 #endif
         // do not ever over shoot
@@ -403,7 +401,7 @@ void ht_find_best(struct s_hashable *ht,
 
     if (t != NULL) {
         *ht_e_best = t;
-#if defined(DEBUG) || defined(HASH_DEBUG)
+#if defined(HASH_DEBUG)
         fprintf(stderr, "ht_find_best: tot target pkts: %lu\n", tcnt);
         fprintf(stderr, "ht_find_best: best: count: %lu\taddr: %s, target: %s:%u\n",
             atomic_read(&(t->packetcnt)),
@@ -484,7 +482,7 @@ void *tee(void *arg0) {
       char addrbuf1[INET6_ADDRSTRLEN];
 #endif
 
-#ifdef DEBUG_SOCKET_BUFFERS
+#ifdef DEBUG_SOCKETS
     uint64_t outstandingBytes, sendBuffSize, rcvBuffSize;
     socklen_t optlen = sizeof(sendBuffSize);
     getsockopt(ssock, SOL_SOCKET, SO_SNDBUF, &sendBuffSize, &optlen);
@@ -517,15 +515,11 @@ void *tee(void *arg0) {
                 fprintf(stderr, "\n");
             }
 #endif
-#ifdef LOG_DEBUG
+#ifdef DEBUG
             fprintf(stderr, "listener %d: new master hash map available (%u)\n",
                     td->thread_id, master_hashtable_idx);
             fprintf(stderr, "listener %d: current hashtable:\n",
                     td->thread_id);
-            ht_iterate(td->hashtable);
-            fprintf(stderr, "listener %d: master hashtable:\n",
-                    td->thread_id);
-            ht_iterate(master_hashtable_ro);
 #endif
 
             // copy: from, to
@@ -534,13 +528,6 @@ void *tee(void *arg0) {
             hashtable = &(td->hashtable);
             td->last_used_master_hashtable_idx = master_hashtable_idx;
 
-#ifdef DEBUG
-            fprintf(stderr, "listener %d: new hashtable:\n",
-                    td->thread_id);
-            ht_iterate(*hashtable);
-            fprintf(stderr, "\n");
-
-#endif
 #ifdef DEBUG_VERBOSE
             // print hashtable of thread 0 (they're all the same)
             if (td->thread_id == 0) {
@@ -558,7 +545,7 @@ void *tee(void *arg0) {
             continue;
         }
 
-#ifdef DEBUG_SOCKET_BUFFERS
+#ifdef DEBUG_SOCKETS
         ioctl(ssock, SIOCOUTQ, &outstandingBytes);
         if ((outstandingBytes/2) >= sendBuffSize)
             fprintf(stderr, "listener %d: send buffer: size: %lu, outstanding bytes: %lu\n",
@@ -598,7 +585,7 @@ void *tee(void *arg0) {
             target_addr = (struct sockaddr_in*)&(target->dest);
         }
 
-#if defined(DEBUG) || defined(HASH_DEBUG)
+#if defined(HASH_DEBUG)
         if (features->hash_based_dist || features->load_balanced_dist)
             fprintf(stderr, "listener %d: hash result for addr: target: %s:%u (count: %lu)\n",
                     td->thread_id,
@@ -617,7 +604,7 @@ void *tee(void *arg0) {
                          ((struct sockaddr_in*)&source_addr)->sin_addr.s_addr,
                          target_addr->sin_addr.s_addr);
 
-#ifdef DEBUG
+#ifdef DEBUG_SOCKETS
         fprintf(stderr, "listener %d: got packet from %s:%d\n",
             td->thread_id,
             inet_ntop(source_addr.ss_family,
@@ -691,7 +678,7 @@ void *tee(void *arg0) {
     }
 
 #ifdef LOG_INFO
-    fprintf(stderr, "[listener-%u] shutting down\n", td->thread_id);
+    fprintf(stderr, "[listener %u] shutting down\n", td->thread_id);
 #endif
     ht_delete_all(*hashtable);
     return NULL;
