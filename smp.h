@@ -51,9 +51,9 @@ static inline void atomic_set(atomic_t *v, uint64_t i)
  */
 static inline void atomic_add(uint64_t i, atomic_t *v)
 {
-    asm volatile(LOCK_PREFIX "addl %1,%0"
-             : "+m" (v->counter)
-             : "ir" (i));
+    asm volatile(LOCK_PREFIX "addq %1,%0"
+             : "=m" (v->counter)
+             : "er" (i), "m" (v->counter));
 }
 
 /**
@@ -65,9 +65,9 @@ static inline void atomic_add(uint64_t i, atomic_t *v)
  */
 static inline void atomic_sub(uint64_t i, atomic_t *v)
 {
-    asm volatile(LOCK_PREFIX "subl %1,%0"
-             : "+m" (v->counter)
-             : "ir" (i));
+    asm volatile(LOCK_PREFIX "subq %1,%0"
+             : "=m" (v->counter)
+             : "er" (i), "m" (v->counter));
 }
 
 /**
@@ -78,8 +78,9 @@ static inline void atomic_sub(uint64_t i, atomic_t *v)
  */
 static inline void atomic_inc(atomic_t *v)
 {
-    asm volatile(LOCK_PREFIX "incl %0"
-             : "+m" (v->counter));
+    asm volatile(LOCK_PREFIX "incq %0"
+             : "=m" (v->counter)
+             : "m" (v->counter));
 }
 
 /**
@@ -90,8 +91,9 @@ static inline void atomic_inc(atomic_t *v)
  */
 static inline void atomic_dec(atomic_t *v)
 {
-    asm volatile(LOCK_PREFIX "decl %0"
-             : "+m" (v->counter));
+    asm volatile(LOCK_PREFIX "decq %0"
+             : "=m" (v->counter)
+             : "m" (v->counter));
 }
 
 #endif /* __SMP_H_ */
