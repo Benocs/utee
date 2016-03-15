@@ -97,7 +97,7 @@ struct s_target {
     socklen_t dest_len;
     int fd;
     // per output / target stats
-    uint64_t packetcnt;
+    atomic_t packetcnt;
 };
 
 struct s_features {
@@ -112,7 +112,7 @@ struct s_hashable {
     uint32_t addr;
     struct s_target* target;
     // per hitter / source stats
-    uint64_t packetcnt;
+    atomic_t packetcnt;
     UT_hash_handle hh;
 };
 
@@ -248,25 +248,27 @@ struct s_hashable* ht_get_add(struct s_hashable **ht, uint32_t addr, struct s_ta
         }
         ht_e->addr = addr;
         ht_e->target = target;
-        ht_e->packetcnt = packetcnt;
+        atomic_set(&(ht_e->packetcnt), packetcnt);
         HASH_ADD_INT(*ht, addr, ht_e);
     }
     else if (overwrite) {
         ht_e->target = target;
         if (sum_packetcnt) {
 #if defined(DEBUG) || defined(HASH_DEBUG)
-            fprintf(stderr, "ht: summing packetcnt. %lu + %lu = ", ht_e->packetcnt, packetcnt);
+            fprintf(stderr, "ht: summing packetcnt. %lu + %lu = ",
+                    atomic_read(&(ht_e->packetcnt)), packetcnt);
 #endif
-            ht_e->packetcnt += packetcnt;
+            atomic_add(packetcnt, &(ht_e->packetcnt));
 #if defined(DEBUG) || defined(HASH_DEBUG)
-            fprintf(stderr, "%lu\n", ht_e->packetcnt);
+            fprintf(stderr, "%lu\n", atomic_read(&(ht_e->packetcnt)));
 #endif
         }
         else {
 #if defined(DEBUG) || defined(HASH_DEBUG)
-            fprintf(stderr, "ht: overwriting packetcnt. old: %lu  new: %lu\n", ht_e->packetcnt, packetcnt);
+            fprintf(stderr, "ht: overwriting packetcnt. old: %lu  new: %lu\n",
+                    atomic_read(&(ht_e->packetcnt)), packetcnt);
 #endif
-            ht_e->packetcnt = packetcnt;
+            atomic_set(&(ht_e->packetcnt), packetcnt);
         }
 
 #if defined(DEBUG) || defined(HASH_DEBUG)
@@ -302,7 +304,7 @@ void ht_iterate(struct s_hashable *ht) {
 
     for(s=ht; s != NULL; s=s->hh.next) {
         fprintf(stderr, "ht_iter: count: %lu\taddr: %s / %u - target: %s:%u\n",
-            s->packetcnt,
+            atomic_read(&(s->packetcnt)),
             inet_ntop(AF_INET, (struct sockaddr_in *)&(s->addr), addrbuf0,
                 sizeof(addrbuf0)),
             ntohl(s->addr),
@@ -326,13 +328,13 @@ void ht_find_max(struct s_hashable *ht,
 #endif
 
     for(s=ht; s != NULL; s=s->hh.next) {
-        if (s->target == target && t && s->packetcnt > t->packetcnt) {
+        if (s->target == target && t && atomic_read(&(s->packetcnt)) > atomic_read(&(t->packetcnt))) {
             t = s;
         }
 
 #if defined(DEBUG) || defined(HASH_DEBUG)
         fprintf(stderr, "ht_iter: count: %lu\taddr: %s, target: %s:%u\n",
-            s->packetcnt,
+            atomic_read(&(s->packetcnt)),
             inet_ntop(AF_INET, (struct sockaddr_in *)&(s->addr), addrbuf0,
                 sizeof(addrbuf0)),
             inet_ntop(AF_INET,
@@ -347,7 +349,7 @@ void ht_find_max(struct s_hashable *ht,
 
 #if defined(DEBUG) || defined(HASH_DEBUG)
         fprintf(stderr, "ht_iter: max: count: %lu\taddr: %s, target: %s:%u\n",
-            t->packetcnt,
+            atomic_read(&(t->packetcnt)),
             inet_ntop(AF_INET, (struct sockaddr_in *)&(t->addr), addrbuf0,
                 sizeof(addrbuf0)),
             inet_ntop(AF_INET,
@@ -384,13 +386,13 @@ void ht_find_best(struct s_hashable *ht,
             continue;
 
 #if defined(DEBUG) || defined(HASH_DEBUG)
-        tcnt += s->packetcnt;
+        tcnt += atomic_read(&(s->packetcnt));
 #endif
         // do not ever over shoot
-        if (s->packetcnt > excess_packets)
+        if (atomic_read(&(s->packetcnt)) > excess_packets)
             continue;
 
-        abs_candidate = excess_packets - s->packetcnt;
+        abs_candidate = excess_packets - atomic_read(&(s->packetcnt));
 
         if (abs_candidate < abs_current) {
             abs_current = abs_candidate;
@@ -404,7 +406,7 @@ void ht_find_best(struct s_hashable *ht,
 #if defined(DEBUG) || defined(HASH_DEBUG)
         fprintf(stderr, "ht_find_best: tot target pkts: %lu\n", tcnt);
         fprintf(stderr, "ht_find_best: best: count: %lu\taddr: %s, target: %s:%u\n",
-            t->packetcnt,
+            atomic_read(&(t->packetcnt)),
             inet_ntop(AF_INET, (struct sockaddr_in *)&(t->addr), addrbuf0,
                 sizeof(addrbuf0)),
             inet_ntop(AF_INET,
@@ -422,7 +424,7 @@ void ht_copy(struct s_hashable *ht_from, struct s_hashable **ht_to) {
         ht_get_add(ht_to,
                 s->addr,
                 s->target,
-                s->packetcnt,
+                atomic_read(&(s->packetcnt)),
                 1,
                 0);
     }
@@ -432,9 +434,8 @@ void ht_reset_counters(struct s_hashable *ht) {
     struct s_hashable *s;
 
     for(s=ht; s != NULL; s=s->hh.next) {
-        s->packetcnt = 0;
-        // TODO: need memory barrier here as target is always shared between master and all threads
-        s->target->packetcnt = 0;
+        atomic_set(&(s->packetcnt), 0);
+        atomic_set(&(s->target->packetcnt), 0);
     }
 }
 
@@ -605,7 +606,7 @@ void *tee(void *arg0) {
                         get_in_addr((struct sockaddr *)target_addr),
                         addrbuf1, sizeof(addrbuf1)),
                     ntohs(((struct sockaddr_in*)target_addr)->sin_port),
-                    ht_e->packetcnt);
+                    atomic_read(&(ht_e->packetcnt)));
 #endif
 
         update_udp_header(udph, numbytes,
@@ -659,19 +660,12 @@ void *tee(void *arg0) {
             }
             else {
                 if (features->load_balanced_dist) {
-                    // NOTE: some small errors / off-by-sth is allowed. no mutex
-                    // pthread_mutex_lock(&(td->mutex_read_tds));
-
-                    // NOTE: need smp_atomic_inc for target-cnt as it is shared between all threads
-                    // NOTE: don't neet smp_atomic_inc for src as they are thread-local in hash maps
+                    // NOTE: need atomic_inc for target-cnt as it is shared between all threads
 
                     // update per source packetcnt
-                    ht_e->packetcnt++;
+                    atomic_inc(&(ht_e->packetcnt));
                     // update per target packetcnt
-                    // TODO: need memory barrier here as target is always shared between master and all threads
-                    target->packetcnt++;
-
-                    // pthread_mutex_unlock(&(td->mutex_read_tds));
+                    atomic_inc(&(target->packetcnt));
                 }
 
                 if ( written != iph->tot_len) {
@@ -1011,7 +1005,7 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
     // create a copy of current counters
     // this allows for the modification independent of ongoing forwarding of packets
     for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
-        per_target_pkt_cnt[cnt] = tds[0].targets[cnt].packetcnt;
+        per_target_pkt_cnt[cnt] = atomic_read(&(tds[0].targets[cnt].packetcnt));
         tot_cnt += per_target_pkt_cnt[cnt];
     }
 
@@ -1043,8 +1037,8 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
 #endif
         for(s=tds[cnt].hashtable; s != NULL; s=s->hh.next) {
             // only copy ht_e if it has seen any packets within the last iteration
-            if (s->packetcnt) {
-                ht_get_add(master_hashtable, s->addr, s->target, s->packetcnt, 1, 1);
+            if (atomic_read(&(s->packetcnt))) {
+                ht_get_add(master_hashtable, s->addr, s->target, atomic_read(&(s->packetcnt)), 1, 1);
             }
         }
     }
@@ -1054,13 +1048,18 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
 #endif
 
     for(s=*master_hashtable; s != NULL; s=s->hh.next) {
-        global_total_cnt += s->packetcnt;
+        global_total_cnt += atomic_read(&(s->packetcnt));
     }
 
 #if defined(LOG_INFO)
     // only print stats if there were any forwarded packets since last optimization iteration
     if (tot_cnt) {
-        fprintf(stderr, "lb cnt stats. ideal=%.4f tot=%lu\n\t", ideal_avg, global_total_cnt);
+        fprintf(stderr, "lb cnt stats. ideal=%.4f thresh=[%.4f, %.4f] "
+                "tot=%lu\n\t",
+                ideal_avg,
+                ideal_avg - (ideal_avg * (double) reorder_threshold),
+                ideal_avg + (ideal_avg * (double) reorder_threshold),
+                global_total_cnt);
         for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
             fprintf(stderr, "%2u=%.4f ", cnt, per_target_pkt_cnt[cnt] / (double)tot_cnt);
             if (cnt && (cnt+1) % 8 == 0)
@@ -1071,11 +1070,6 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
 #endif
 
     for (itcnt = 0; itcnt < MAXOPTIMIZATIONITERATIONS; itcnt++) {
-#if defined(LOG_INFO)
-        fprintf(stderr, "optimization iteration: %u of max %u\n",
-                itcnt+1, MAXOPTIMIZATIONITERATIONS);
-#endif
-
         // find target with smallest counter and target with largest counter
         target_min_idx = 0;
         target_max_idx = 0;
@@ -1094,7 +1088,14 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
 #if defined(DEBUG)
         fprintf(stderr, "hit_reordering_threshold: %u\n", hit_reordering_threshold);
 #endif
+        // if !hit_reordering_threshold, abort optimization
+        if (!hit_reordering_threshold)
+            break;
 
+#if defined(LOG_INFO)
+        fprintf(stderr, "optimization iteration: %u of max %u\n",
+                itcnt+1, MAXOPTIMIZATIONITERATIONS);
+#endif
 #if defined(DEBUG)
         fprintf(stderr, "load_balance: out_min: %s:%u (%lu), "
                 "out_max: %s:%u (%lu)\n",
@@ -1110,9 +1111,6 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
                 per_target_pkt_cnt[target_max_idx]
                 );
 #endif
-        // if !hit_reordering_threshold, abort optimization
-        if (!hit_reordering_threshold)
-            break;
 
         // calculate ideal excess lines/hits
         excess_packets = per_target_pkt_cnt[target_max_idx] - per_target_pkt_cnt[target_min_idx];
@@ -1155,7 +1153,7 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
             ntohs(((struct sockaddr_in *)&(tds[0].targets[target_min_idx].dest))->sin_port),
             &(tds[0].targets[target_min_idx]),
 
-            ht_e_best->packetcnt);
+            atomic_read(&(ht_e_best->packetcnt)));
 #endif
 
         // move exporter (in ht_e_best) from target_max to target_min
@@ -1163,13 +1161,13 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
         ht_get_add(master_hashtable,
                 ht_e_best->addr,
                 ht_e_best->target,
-                ht_e_best->packetcnt,
+                atomic_read(&(ht_e_best->packetcnt)),
                 1,
                 0);
 
         // refresh counters
-        per_target_pkt_cnt[target_max_idx] -= ht_e_best->packetcnt;
-        per_target_pkt_cnt[target_min_idx] += ht_e_best->packetcnt;
+        per_target_pkt_cnt[target_max_idx] -= atomic_read(&(ht_e_best->packetcnt));
+        per_target_pkt_cnt[target_min_idx] += atomic_read(&(ht_e_best->packetcnt));
 
     } // end of for (itcnt = 0; itcnt < MAXOPTIMIZATIONITERATIONS; itcnt++) {
 
@@ -1178,9 +1176,8 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
     // reset all counters in next hashtable
     ht_reset_counters(*master_hashtable);
     // reset all thread counters
-    // TODO: need memory barrier here
     for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
-        tds[0].targets[cnt].packetcnt = 0;
+        atomic_set(&(tds[0].targets[cnt].packetcnt), 0);
     }
     fprintf(stderr, "\n===================================================\n");
     // set next hashtable as ro
@@ -1349,7 +1346,6 @@ int main(int argc, char *argv[]) {
         tds[cnt].num_targets = num_threads;
         tds[cnt].hashtable = NULL;
         tds[cnt].last_used_master_hashtable_idx = 0;
-        // pthread_mutex_init(&(tds[cnt].mutex_read_tds), NULL);
 
         switch (mode) {
             case 'r':
@@ -1402,9 +1398,6 @@ int main(int argc, char *argv[]) {
         if (res)
             free(res);
     }
-    // for (cnt = 0; cnt < num_threads; cnt++) {
-    //     pthread_mutex_destroy(&(tds[cnt].mutex_read_tds));
-    // }
 
     ht_delete_all(master_hashtable);
     ht_delete_all(master_hashtable_ro);
