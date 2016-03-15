@@ -685,8 +685,6 @@ void *tee(void *arg0) {
 }
 
 void *duplicate(void *arg0) {
-    // TODO: refactor me / merge into *tee
-#if 0
     uint16_t cnt;
 
     struct s_thread_data *td = (struct s_thread_data *)arg0;
@@ -719,12 +717,11 @@ void *duplicate(void *arg0) {
         if ((numbytes = recvfrom(td->sockfd, data, BUFLEN-sizeof(struct iphdr)-sizeof(struct udphdr), 0,
             (struct sockaddr *)&source_addr, &addr_len)) == -1) {
             perror("recvfrom");
-            //exit(1);
             continue;
         }
 
         if (numbytes > 1472) {
-#ifdef DEBUG
+#ifdef LOG_ERROR
             fprintf(stderr, "listener %d: packet is %d bytes long cropping to 1472\n", td->thread_id, numbytes);
 #endif
             numbytes = 1472;
@@ -732,7 +729,7 @@ void *duplicate(void *arg0) {
 
         data[numbytes] = '\0';
 
-#ifdef DEBUG
+#ifdef DEBUG_SOCKETS
         char addrbuf0[INET6_ADDRSTRLEN];
         char addrbuf1[INET6_ADDRSTRLEN];
         fprintf(stderr, "listener %d: got packet from %s\n",
@@ -749,14 +746,13 @@ void *duplicate(void *arg0) {
         // if yes, iterate over remaining targets and also send packets to them
         for (cnt=0; cnt < td->num_targets; cnt++) {
 
-            target_addr = td->targets[cnt];
-
+            target_addr = *(struct sockaddr_in*)&(td->targets[cnt].dest);
             update_udp_header(udph, numbytes, ((struct sockaddr_in*)&source_addr)->sin_port, target_addr.sin_port);
             update_ip_header(iph, sizeof(struct udphdr) + numbytes,
                             ((struct sockaddr_in*)&source_addr)->sin_addr.s_addr,
                             target_addr.sin_addr.s_addr);
 
-#ifdef DEBUG
+#ifdef DEBUG_SOCKETS
             fprintf(stderr, "listener %d: sending packet: %s:%u => %s:%u: len: %u\n",
                 td->thread_id,
                 inet_ntop(AF_INET,
@@ -781,7 +777,6 @@ void *duplicate(void *arg0) {
     }
 #ifdef LOG_INFO
     fprintf(stderr, "[listener-%u] shutting down\n", td->thread_id);
-#endif
 #endif
     return NULL;
 }
