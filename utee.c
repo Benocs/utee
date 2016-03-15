@@ -127,7 +127,8 @@ struct s_thread_data {
 };
 
 // variables that are changed when a signal arrives
-uint8_t optional_output_enabled = 0;
+volatile uint8_t optional_output_enabled = 0;
+volatile uint8_t run_flag = 1;
 
 struct s_thread_data tds[MAXTHREADS];
 uint16_t num_threads = 0;
@@ -135,26 +136,7 @@ uint16_t num_threads = 0;
 struct s_hashable* master_hashtable_ro = NULL;
 uint16_t master_hashtable_idx = 0;
 
-char *myStrCat (char *s, char *a) {
-    while (*s != '\0') s++;
-    while (*a != '\0') *s++ = *a++;
-    *s = '\0';
-    return s;
-}
-
-char *replStr (char *str, size_t count) {
-    if (count == 0) return NULL;
-    char *ret = malloc (strlen (str) * count + count);
-    if (ret == NULL) return NULL;
-    *ret = '\0';
-    char *tmp = myStrCat (ret, str);
-    while (--count > 0) {
-        tmp = myStrCat (tmp, str);
-    }
-    return ret;
-}
-
-unsigned short csum (unsigned short *buf, int nwords) {
+unsigned short checksum (unsigned short *buf, int nwords) {
     unsigned long sum;
     for (sum = 0; nwords > 0; nwords--)
         sum += *buf++;
@@ -462,6 +444,7 @@ void ht_delete_all(struct s_hashable *ht) {
         HASH_DEL(ht, s);
         free(s);
     }
+    free(ht);
 }
 
 void *tee(void *arg0) {
@@ -521,7 +504,7 @@ void *tee(void *arg0) {
     FD_ZERO(&wfds);
 #endif
 
-    while (1) {
+    while (run_flag) {
         if (td->last_used_master_hashtable_idx != master_hashtable_idx) {
 #ifdef DEBUG_VERBOSE
             // print hashtable of thread 0 (they're all the same)
@@ -552,7 +535,7 @@ void *tee(void *arg0) {
 #ifdef DEBUG
             fprintf(stderr, "listener %d: new hashtable:\n",
                     td->thread_id);
-            ht_iterate(td->hashtable);
+            ht_iterate(*hashtable);
             fprintf(stderr, "\n");
 
 #endif
@@ -561,7 +544,7 @@ void *tee(void *arg0) {
             if (td->thread_id == 0) {
                 fprintf(stderr, "listener %d: new hashtable:\n",
                         td->thread_id);
-                ht_iterate(td->hashtable);
+                ht_iterate(*hashtable);
                 fprintf(stderr, "\n");
             }
 #endif
@@ -711,8 +694,12 @@ void *tee(void *arg0) {
         } while (retval <= 0);
 #endif
     }
-    pthread_exit(NULL);
-    // TODO: free memory
+
+#ifdef LOG_INFO
+    fprintf(stderr, "[listener-%u] shutting down\n", td->thread_id);
+#endif
+    ht_delete_all(*hashtable);
+    return NULL;
 }
 
 void *duplicate(void *arg0) {
@@ -746,7 +733,7 @@ void *duplicate(void *arg0) {
         exit(1);
     }
 
-    while (1) {
+    while (run_flag) {
         if ((numbytes = recvfrom(td->sockfd, data, BUFLEN-sizeof(struct iphdr)-sizeof(struct udphdr), 0,
             (struct sockaddr *)&source_addr, &addr_len)) == -1) {
             perror("recvfrom");
@@ -810,8 +797,10 @@ void *duplicate(void *arg0) {
                 break;
         }
     }
+#ifdef LOG_INFO
+    fprintf(stderr, "[listener-%u] shutting down\n", td->thread_id);
 #endif
-    pthread_exit(NULL);
+#endif
     return NULL;
 }
 
@@ -1037,7 +1026,7 @@ uint8_t load_balance(struct s_thread_data* tds, uint16_t num_threads,
         return 0;
 
 #if defined(DEBUG)
-    fprintf(stderr, "len(master_hastable) before thread merging: %u\n", HASH_COUNT(*master_hashtable));
+    fprintf(stderr, "len(master_hashtable) before thread merging: %u\n", HASH_COUNT(*master_hashtable));
 #endif
     // merge hashmaps
     for (cnt = 0; cnt < num_threads; cnt++) {
@@ -1060,7 +1049,7 @@ uint8_t load_balance(struct s_thread_data* tds, uint16_t num_threads,
     }
 
 #if defined(DEBUG)
-    fprintf(stderr, "len(master_hastable) after thread merging: %u\n", HASH_COUNT(*master_hashtable));
+    fprintf(stderr, "len(master_hashtable) after thread merging: %u\n", HASH_COUNT(*master_hashtable));
 #endif
 
     for(s=*master_hashtable; s != NULL; s=s->hh.next) {
@@ -1200,7 +1189,7 @@ uint8_t load_balance(struct s_thread_data* tds, uint16_t num_threads,
     // increase hashtable version to signal threads that a new version is available
     master_hashtable_idx++;
 #if defined(DEBUG)
-    fprintf(stderr, "len(master_hastable) after swapping to ro: %u\n", HASH_COUNT(*master_hashtable));
+    fprintf(stderr, "len(master_hashtable) after swapping to ro: %u\n", HASH_COUNT(*master_hashtable));
 #endif
 
     return time_to_load_balance;
@@ -1210,11 +1199,26 @@ void sig_handler_toggle_optional_output(int signum) {
     uint16_t cnt;
 
     optional_output_enabled = (!optional_output_enabled);
-    fprintf(stderr, "toggling optional output: %u\n", optional_output_enabled);
+#if defined(LOG_INFO)
+    fprintf(stderr, "[signal] toggling optional output: %u\n", optional_output_enabled);
+#endif
 
     for (cnt = 0; cnt < num_threads; cnt++) {
         tds[cnt].features.duplicate = optional_output_enabled;
     }
+}
+
+void sig_handler_shutdown(int signum) {
+    run_flag = 0;
+#if defined(LOG_INFO)
+    fprintf(stderr, "[signal] requesting shutdown\n");
+#endif
+}
+
+void sig_handler_ignore(int signum) {
+#if defined(LOG_INFO)
+    fprintf(stderr, "[signal] ignoring signal: %d\n", signum);
+#endif
 }
 
 void usage(int argc, char *argv[]) {
@@ -1238,6 +1242,7 @@ int main(int argc, char *argv[]) {
     pthread_t thread[MAXTHREADS];
     uint8_t cnt;
     int lsock;
+    void *res;
 
     unsigned char mode = 0xFF;
 
@@ -1324,11 +1329,17 @@ int main(int argc, char *argv[]) {
         usage(argc, argv);
 
     signal(SIGUSR1, sig_handler_toggle_optional_output);
+    signal(SIGTERM, sig_handler_shutdown);
+    signal(SIGHUP, sig_handler_shutdown);
+    signal(SIGINT, sig_handler_ignore);
+    signal(SIGUSR2, sig_handler_ignore);
 
 #ifdef DEBUG
     fprintf(stderr, "setting up listener socket...\n");
 #endif
     lsock = open_listener_socket(listenaddr, listenport, pipe_size);
+
+    num_threads = argc - optind;
 
     bzero(tds, sizeof(tds));
     // this one loops over all threads
@@ -1336,7 +1347,7 @@ int main(int argc, char *argv[]) {
         tds[cnt].thread_id = cnt;
         tds[cnt].sockfd = lsock;
         tds[cnt].targets = targets;
-        tds[cnt].num_targets = argc - optind;
+        tds[cnt].num_targets = num_threads;
         tds[cnt].hashtable = NULL;
         tds[cnt].last_used_master_hashtable_idx = 0;
         // pthread_mutex_init(&(tds[cnt].mutex_read_tds), NULL);
@@ -1369,12 +1380,12 @@ int main(int argc, char *argv[]) {
         }
     }
 
-#ifdef DEBUG
+#ifdef LOG_INFO
     fprintf(stderr, "starting tee...\n");
 #endif
 
-    // main thread is the 'extra' stats-thread. use it to catch/handle signals
-    while (1) {
+    // main thread to catch/handle signals, trigger load-balancing, if enabled
+    while (run_flag) {
 
         if (loadbalanced_dist_enabled) {
             load_balance(tds, num_threads, threshold, reorder_threshold,
@@ -1383,10 +1394,20 @@ int main(int argc, char *argv[]) {
 
         sleep(1);
     }
+#ifdef LOG_INFO
+    fprintf(stderr, "[main] shutting down\n");
+#endif
 
+    for (cnt = 0; cnt < num_threads; cnt++) {
+        pthread_join(thread[cnt], &res);
+        if (res)
+            free(res);
+    }
     // for (cnt = 0; cnt < num_threads; cnt++) {
     //     pthread_mutex_destroy(&(tds[cnt].mutex_read_tds));
     // }
-    pthread_exit(NULL);
+
+    ht_delete_all(master_hashtable);
+    ht_delete_all(master_hashtable_ro);
     return 0;
 }
