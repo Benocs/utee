@@ -899,7 +899,7 @@ void init_sending_sockets(struct s_target* targets,
             inet_ntop(AF_INET,
                 get_in_addr((struct sockaddr *)&(target->dest)),
                 addrbuf, sizeof(addrbuf)),
-            ((struct sockaddr_in*)&(target->dest))->sin_port,
+            ntohs(((struct sockaddr_in*)&(target->dest))->sin_port),
             target->fd);
 #endif
     }
@@ -1236,6 +1236,8 @@ int main(int argc, char *argv[]) {
     // 64 MB SND/RCV buffers
     uint32_t pipe_size = 67108864;
 
+    uint32_t num_targets;
+
     int c;
 
     opterr = 0;
@@ -1309,7 +1311,7 @@ int main(int argc, char *argv[]) {
     signal(SIGUSR1, sig_handler_toggle_optional_output);
     signal(SIGTERM, sig_handler_shutdown);
     signal(SIGHUP, sig_handler_shutdown);
-    signal(SIGINT, sig_handler_ignore);
+    signal(SIGINT, sig_handler_shutdown);
     signal(SIGUSR2, sig_handler_ignore);
 
 #ifdef DEBUG
@@ -1317,7 +1319,7 @@ int main(int argc, char *argv[]) {
 #endif
     lsock = open_listener_socket(listenaddr, listenport, pipe_size);
 
-    num_threads = argc - optind;
+    num_targets = argc - optind;
 
     bzero(tds, sizeof(tds));
     // this one loops over all threads
@@ -1325,7 +1327,7 @@ int main(int argc, char *argv[]) {
         tds[cnt].thread_id = cnt;
         tds[cnt].sockfd = lsock;
         tds[cnt].targets = targets;
-        tds[cnt].num_targets = num_threads;
+        tds[cnt].num_targets = num_targets;
         tds[cnt].hashtable = NULL;
         tds[cnt].last_used_master_hashtable_idx = 0;
 
