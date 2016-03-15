@@ -9,7 +9,7 @@
 #define LOCK_PREFIX "\n\tlock; "
 
 typedef struct {
-    uint64_t counter;
+    volatile uint64_t counter;
 } atomic_t;
 
 /*
@@ -25,9 +25,9 @@ typedef struct {
  *
  * Atomically reads the value of @v.
  */
-static inline int atomic_read(const atomic_t *v)
+static inline uint64_t atomic_read(const atomic_t *v)
 {
-    return (*(volatile int *)&(v)->counter);
+    return (*(volatile uint64_t *)&(v)->counter);
 }
 
 /**
@@ -37,7 +37,7 @@ static inline int atomic_read(const atomic_t *v)
  *
  * Atomically sets the value of @v to @i.
  */
-static inline void atomic_set(atomic_t *v, int i)
+static inline void atomic_set(atomic_t *v, uint64_t i)
 {
     v->counter = i;
 }
@@ -49,7 +49,7 @@ static inline void atomic_set(atomic_t *v, int i)
  *
  * Atomically adds @i to @v.
  */
-static inline void atomic_add(int i, atomic_t *v)
+static inline void atomic_add(uint64_t i, atomic_t *v)
 {
     asm volatile(LOCK_PREFIX "addl %1,%0"
              : "+m" (v->counter)
@@ -63,7 +63,7 @@ static inline void atomic_add(int i, atomic_t *v)
  *
  * Atomically subtracts @i from @v.
  */
-static inline void atomic_sub(int i, atomic_t *v)
+static inline void atomic_sub(uint64_t i, atomic_t *v)
 {
     asm volatile(LOCK_PREFIX "subl %1,%0"
              : "+m" (v->counter)
