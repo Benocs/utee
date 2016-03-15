@@ -536,6 +536,7 @@ void *tee(void *arg0) {
             td->hashtable = *hashtable;
             hashtable = &(td->hashtable);
             atomic_set(&(td->last_used_master_hashtable_idx), atomic_read(&master_hashtable_idx));
+            smp_mb__after_atomic();
 
 #ifdef DEBUG_VERBOSE
             // print hashtable of thread 0 (they're all the same)
@@ -984,6 +985,8 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
     // TODO: clean code, commit. - test duplicate in legacy-utee, deploy, test new utee on 2nd output
     static uint64_t global_total_cnt = 0;
 
+    uint8_t threads_reading_from_master;
+
 #if defined(DEBUG) || defined(LOG_INFO)
     char addrbuf0[INET6_ADDRSTRLEN];
     char addrbuf1[INET6_ADDRSTRLEN];
@@ -1168,6 +1171,22 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
     } // end of for (itcnt = 0; itcnt < MAXOPTIMIZATIONITERATIONS; itcnt++) {
 
     smp_mb__before_atomic();
+    // wait for all threads to release 'lock' on master_hashtable_ro
+    do {
+        threads_reading_from_master = 0;
+        for (cnt = 0; cnt < num_threads; cnt++ ) {
+            if (atomic_read(&(tds[cnt].last_used_master_hashtable_idx)) != atomic_read(&master_hashtable_idx))
+                threads_reading_from_master = 1;
+        }
+
+        if (threads_reading_from_master) {
+#if defined(LOG_WARN)
+            fprintf(stderr, "waiting for threads to release master_hashtable\n");
+#endif
+            sleep(1);
+        }
+    } while(threads_reading_from_master);
+
     // delete last ro-hashtable
     ht_delete_all(master_hashtable_ro);
     // reset all counters in next hashtable
@@ -1177,9 +1196,6 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
         atomic_set(&(tds[0].targets[cnt].packetcnt), 0);
     }
     fprintf(stderr, "\n===================================================\n");
-
-    // TODO: FIXME: implement client 'locks' (version array)
-    // TODO: FIXME: set next hashtable as ro atomically
 
     // set next hashtable as ro
     master_hashtable_ro = *master_hashtable;
