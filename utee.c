@@ -124,7 +124,7 @@ struct s_thread_data {
     struct s_features features;
     struct s_hashable* hashtable;
 
-    uint16_t last_used_master_hashtable_idx;
+    atomic_t last_used_master_hashtable_idx;
 };
 
 // variables that are changed when a signal arrives
@@ -135,7 +135,7 @@ struct s_thread_data tds[MAXTHREADS];
 uint16_t num_threads = 0;
 
 struct s_hashable* master_hashtable_ro = NULL;
-volatile uint16_t master_hashtable_idx = 0;
+atomic_t master_hashtable_idx;
 
 unsigned short checksum (unsigned short *buf, int nwords) {
     unsigned long sum;
@@ -515,10 +515,11 @@ void *tee(void *arg0) {
 #endif
 
     while (run_flag) {
-        if (td->last_used_master_hashtable_idx != master_hashtable_idx) {
+        smp_mb__before_atomic();
+        if (atomic_read(&(td->last_used_master_hashtable_idx)) != atomic_read(&master_hashtable_idx)) {
 #ifdef DEBUG_VERBOSE
             // print hashtable of thread 0 (they're all the same)
-            if (td->thread_id == 0 && td->last_used_master_hashtable_idx == 0) {
+            if (td->thread_id == 0 && atomic_read(&(td->last_used_master_hashtable_idx)) == 0) {
                 fprintf(stderr, "listener %d: orig hashtable:\n",
                         td->thread_id);
                 ht_iterate(td->hashtable);
@@ -526,8 +527,8 @@ void *tee(void *arg0) {
             }
 #endif
 #ifdef DEBUG
-            fprintf(stderr, "listener %d: new master hash map available (%u)\n",
-                    td->thread_id, master_hashtable_idx);
+            fprintf(stderr, "listener %d: new master hash map available (%lu)\n",
+                    td->thread_id, atomic_read(&master_hashtable_idx));
             fprintf(stderr, "listener %d: current hashtable:\n",
                     td->thread_id);
 #endif
@@ -536,7 +537,7 @@ void *tee(void *arg0) {
             ht_copy(master_hashtable_ro, hashtable);
             td->hashtable = *hashtable;
             hashtable = &(td->hashtable);
-            td->last_used_master_hashtable_idx = master_hashtable_idx;
+            atomic_set(&(td->last_used_master_hashtable_idx), atomic_read(&master_hashtable_idx));
 
 #ifdef DEBUG_VERBOSE
             // print hashtable of thread 0 (they're all the same)
@@ -1189,7 +1190,7 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
     *master_hashtable = NULL;
     // increase hashtable version to signal threads that a new version is available
     smp_mb__before_atomic();
-    master_hashtable_idx++;
+    atomic_inc(&master_hashtable_idx);
     smp_mb__after_atomic();
 #if defined(DEBUG)
     fprintf(stderr, "len(master_hashtable) after swapping to ro: %u\n", HASH_COUNT(*master_hashtable));
@@ -1262,6 +1263,9 @@ int main(int argc, char *argv[]) {
     uint32_t num_targets;
 
     int c;
+
+    atomic_set(&master_hashtable_idx, 0);
+    smp_mb__after_atomic();
 
     opterr = 0;
     while ((c = getopt (argc, argv, "l:m:n:i:t:LH")) != -1)
@@ -1352,7 +1356,7 @@ int main(int argc, char *argv[]) {
         tds[cnt].targets = targets;
         tds[cnt].num_targets = num_targets;
         tds[cnt].hashtable = NULL;
-        tds[cnt].last_used_master_hashtable_idx = 0;
+        atomic_set(&(tds[cnt].last_used_master_hashtable_idx), 0);
 
         switch (mode) {
             case 'r':
@@ -1366,6 +1370,7 @@ int main(int argc, char *argv[]) {
             break;
         }
     }
+    smp_mb__after_atomic();
 
     // set all targets
     init_sending_sockets(targets, argc - optind, &(argv[optind]), pipe_size);
