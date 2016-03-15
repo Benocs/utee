@@ -135,7 +135,7 @@ struct s_thread_data tds[MAXTHREADS];
 uint16_t num_threads = 0;
 
 struct s_hashable* master_hashtable_ro = NULL;
-uint16_t master_hashtable_idx = 0;
+volatile uint16_t master_hashtable_idx = 0;
 
 unsigned short checksum (unsigned short *buf, int nwords) {
     unsigned long sum;
@@ -246,11 +246,14 @@ struct s_hashable* ht_get_add(struct s_hashable **ht, uint32_t addr, struct s_ta
         }
         ht_e->addr = addr;
         ht_e->target = target;
+        smp_mb__before_atomic();
         atomic_set(&(ht_e->packetcnt), packetcnt);
+        smp_mb__after_atomic();
         HASH_ADD_INT(*ht, addr, ht_e);
     }
     else if (overwrite) {
         ht_e->target = target;
+        smp_mb__before_atomic();
         if (sum_packetcnt) {
 #if defined(HASH_DEBUG)
             fprintf(stderr, "ht: summing packetcnt. %lu + %lu = ",
@@ -268,6 +271,7 @@ struct s_hashable* ht_get_add(struct s_hashable **ht, uint32_t addr, struct s_ta
 #endif
             atomic_set(&(ht_e->packetcnt), packetcnt);
         }
+        smp_mb__after_atomic();
 
 #if defined(HASH_DEBUG)
         fprintf(stderr, "ht: addr: %s found. overwriting. using new output: %s:%u\n",
@@ -300,6 +304,7 @@ void ht_iterate(struct s_hashable *ht) {
     char addrbuf0[INET6_ADDRSTRLEN];
     char addrbuf1[INET6_ADDRSTRLEN];
 
+    smp_mb__before_atomic();
     for(s=ht; s != NULL; s=s->hh.next) {
         fprintf(stderr, "ht_iter: count: %lu\taddr: %s / %u - target: %s:%u\n",
             atomic_read(&(s->packetcnt)),
@@ -325,6 +330,7 @@ void ht_find_max(struct s_hashable *ht,
     char addrbuf1[INET6_ADDRSTRLEN];
 #endif
 
+    smp_mb__before_atomic();
     for(s=ht; s != NULL; s=s->hh.next) {
         if (s->target == target && t && atomic_read(&(s->packetcnt)) > atomic_read(&(t->packetcnt))) {
             t = s;
@@ -378,6 +384,7 @@ void ht_find_best(struct s_hashable *ht,
     fprintf(stderr, "ht_find_best: excess_packets: %lu\n", excess_packets);
 #endif
 
+    smp_mb__before_atomic();
     for(s=ht; s != NULL; s=s->hh.next) {
         // not our target. skip
         if (s->target != target)
@@ -418,6 +425,7 @@ void ht_find_best(struct s_hashable *ht,
 void ht_copy(struct s_hashable *ht_from, struct s_hashable **ht_to) {
     struct s_hashable *s;
 
+    smp_mb__before_atomic();
     for(s=ht_from; s != NULL; s=s->hh.next) {
         ht_get_add(ht_to,
                 s->addr,
@@ -431,10 +439,12 @@ void ht_copy(struct s_hashable *ht_from, struct s_hashable **ht_to) {
 void ht_reset_counters(struct s_hashable *ht) {
     struct s_hashable *s;
 
+    smp_mb__before_atomic();
     for(s=ht; s != NULL; s=s->hh.next) {
         atomic_set(&(s->packetcnt), 0);
         atomic_set(&(s->target->packetcnt), 0);
     }
+    smp_mb__after_atomic();
 }
 
 void ht_delete_all(struct s_hashable *ht) {
@@ -587,6 +597,7 @@ void *tee(void *arg0) {
 
 #if defined(HASH_DEBUG)
         if (features->hash_based_dist || features->load_balanced_dist)
+            smp_mb__before_atomic();
             fprintf(stderr, "listener %d: hash result for addr: target: %s:%u (count: %lu)\n",
                     td->thread_id,
                     inet_ntop(AF_INET,
@@ -649,10 +660,12 @@ void *tee(void *arg0) {
                 if (features->load_balanced_dist) {
                     // NOTE: need atomic_inc for target-cnt as it is shared between all threads
 
+                    smp_mb__before_atomic();
                     // update per source packetcnt
                     atomic_inc(&(ht_e->packetcnt));
                     // update per target packetcnt
                     atomic_inc(&(target->packetcnt));
+                    smp_mb__after_atomic();
                 }
 
                 if ( written != iph->tot_len) {
@@ -986,6 +999,7 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
 
     // create a copy of current counters
     // this allows for the modification independent of ongoing forwarding of packets
+    smp_mb__before_atomic();
     for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
         per_target_pkt_cnt[cnt] = atomic_read(&(tds[0].targets[cnt].packetcnt));
         tot_cnt += per_target_pkt_cnt[cnt];
@@ -1017,6 +1031,7 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
 #if defined(DEBUG)
         fprintf(stderr, "tds[%u].hashtable: %p - master: %p\n", cnt, tds[cnt].hashtable, *master_hashtable);
 #endif
+        smp_mb__before_atomic();
         for(s=tds[cnt].hashtable; s != NULL; s=s->hh.next) {
             // only copy ht_e if it has seen any packets within the last iteration
             if (atomic_read(&(s->packetcnt))) {
@@ -1153,6 +1168,7 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
 
     } // end of for (itcnt = 0; itcnt < MAXOPTIMIZATIONITERATIONS; itcnt++) {
 
+    smp_mb__before_atomic();
     // delete last ro-hashtable
     ht_delete_all(master_hashtable_ro);
     // reset all counters in next hashtable
@@ -1162,12 +1178,19 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
         atomic_set(&(tds[0].targets[cnt].packetcnt), 0);
     }
     fprintf(stderr, "\n===================================================\n");
+
+    // TODO: FIXME: implement client 'locks' (version array)
+    // TODO: FIXME: set next hashtable as ro atomically
+
     // set next hashtable as ro
     master_hashtable_ro = *master_hashtable;
+    smp_mb__after_atomic();
     // release master pointer to next hashtable
     *master_hashtable = NULL;
     // increase hashtable version to signal threads that a new version is available
+    smp_mb__before_atomic();
     master_hashtable_idx++;
+    smp_mb__after_atomic();
 #if defined(DEBUG)
     fprintf(stderr, "len(master_hashtable) after swapping to ro: %u\n", HASH_COUNT(*master_hashtable));
 #endif
