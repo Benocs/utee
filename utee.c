@@ -47,6 +47,7 @@
 /*
  * TODO:
  * * implement full IPv6 support
+ * * clean code, commit. - test duplicate in legacy-utee, deploy, test new utee on 2nd output
  */
 
 #define BUFLEN 4096
@@ -966,7 +967,7 @@ int open_listener_socket(char* laddr, int lport, uint32_t pipe_size) {
     return lsock;
 }
 
-uint8_t load_balance(struct s_thread_data* tds, uint16_t num_threads,
+void load_balance(struct s_thread_data* tds, uint16_t num_threads,
         uint64_t threshold, double reorder_threshold,
         struct s_hashable** master_hashtable) {
 
@@ -974,7 +975,6 @@ uint8_t load_balance(struct s_thread_data* tds, uint16_t num_threads,
 
     uint16_t itcnt;
     uint16_t cnt;
-    uint8_t time_to_load_balance = 0;
     uint8_t hit_reordering_threshold = 0;
 
     struct s_hashable* ht_e_best = NULL;
@@ -987,7 +987,6 @@ uint8_t load_balance(struct s_thread_data* tds, uint16_t num_threads,
     uint16_t target_max_idx;
 
     uint64_t tot_cnt = 0;
-
     uint64_t excess_packets;
 
     double ideal_avg = (1 / (double)tds[0].num_targets);
@@ -1007,7 +1006,7 @@ uint8_t load_balance(struct s_thread_data* tds, uint16_t num_threads,
     // NOTE: from s_target the output stats can be extracted
 
     if (num_threads == 0)
-        return 0;
+        return;
 
     // create a copy of current counters
     // this allows for the modification independent of ongoing forwarding of packets
@@ -1018,12 +1017,14 @@ uint8_t load_balance(struct s_thread_data* tds, uint16_t num_threads,
 
     // early abort if no packets were forwarded in last iteration
     if (!tot_cnt)
-        return 0;
+        return;
 
-    if (tot_cnt > threshold)
-        time_to_load_balance = 1;
-    else
-        return 0;
+    if (tot_cnt < threshold) {
+#if defined(DEBUG)
+        fprintf(stderr, "not load balancing: tot_cnt < threshold: %lu < %lu\n", tot_cnt, threshold);
+#endif
+        return;
+    }
 
 #if defined(DEBUG)
     fprintf(stderr, "len(master_hashtable) before thread merging: %u\n", HASH_COUNT(*master_hashtable));
@@ -1191,8 +1192,6 @@ uint8_t load_balance(struct s_thread_data* tds, uint16_t num_threads,
 #if defined(DEBUG)
     fprintf(stderr, "len(master_hashtable) after swapping to ro: %u\n", HASH_COUNT(*master_hashtable));
 #endif
-
-    return time_to_load_balance;
 }
 
 void sig_handler_toggle_optional_output(int signum) {
@@ -1325,7 +1324,7 @@ int main(int argc, char *argv[]) {
         default:
             usage(argc, argv);
     }
-    if (mode == 0xFF || num_threads == 0 || listenport == 0 || (argc - optind > num_threads))
+    if (mode == 0xFF || num_threads == 0 || listenport == 0 || (num_threads > MAXTHREADS))
         usage(argc, argv);
 
     signal(SIGUSR1, sig_handler_toggle_optional_output);
