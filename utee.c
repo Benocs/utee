@@ -693,11 +693,17 @@ void *duplicate(void *arg0) {
     setup_udp_header(udph, 0, 0, 0);
     char *data = (char *)udph + sizeof(struct udphdr);
 
-    int ssock = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
-    if(ssock < 0){
-        fprintf(stderr, "Could not open raw socket\n");
-        exit(1);
-    }
+#if defined(LOG_ERROR) || defined(DEBUG_SOCKETS)
+    char addrbuf0[INET6_ADDRSTRLEN];
+    char addrbuf1[INET6_ADDRSTRLEN];
+#endif
+
+#ifdef USE_SELECT
+    fd_set wfds;
+    struct timeval tv;
+    int retval;
+    FD_ZERO(&wfds);
+#endif
 
     while (run_flag) {
         if ((numbytes = recvfrom(td->sockfd, data, BUFLEN-sizeof(struct iphdr)-sizeof(struct udphdr), 0,
@@ -752,10 +758,48 @@ void *duplicate(void *arg0) {
                 iph->tot_len);
 #endif
 
-            if (sendto(ssock, datagram, iph->tot_len, 0, (struct sockaddr *) &target_addr, sizeof(target_addr)) < 0) {
-                perror("sendto failed");
-                fprintf(stderr, "pktlen: %u\n", iph->tot_len);
-            }
+#ifdef USE_SELECT
+            do {
+                do {
+                    tv.tv_sec = 0;
+                    tv.tv_usec = 100000;
+                    FD_SET(td->targets[cnt].fd, &wfds);
+                    retval = select((td->targets[cnt].fd)+1, NULL, &wfds, NULL, &tv);
+
+                    if (retval == -1)
+                        perror("select()");
+                } while (retval <= 0);
+#endif
+                int32_t written;
+                if ((written = sendto(td->targets[cnt].fd, datagram, iph->tot_len, 0, (struct sockaddr *) &target_addr, sizeof(target_addr))) < 0) {
+                    perror("sendto failed");
+                    fprintf(stderr, "%lu - listener %d: error in write %s - %d\n",
+                            time(NULL), td->thread_id, strerror(errno), errno);
+#ifdef USE_SELECT
+                    retval = -1;
+#endif
+                }
+                else {
+                    if ( written != iph->tot_len) {
+                        // handle this short write - log and move on
+#ifdef LOG_ERROR
+                        fprintf(stderr, "ERROR: listener %d: short write: sent packet: %s:%u => %s:%u: len: %u written: %d\n",
+                            td->thread_id,
+                            inet_ntop(AF_INET,
+                                (struct sockaddr_in *)&(iph->saddr),
+                                addrbuf0, sizeof(addrbuf0)),
+                            ntohs(udph->source),
+                            inet_ntop(AF_INET,
+                                (struct sockaddr_in *)&(iph->daddr),
+                                addrbuf1, sizeof(addrbuf1)),
+                            ntohs(udph->dest),
+                            iph->tot_len, written);
+#endif
+                    }
+                }
+#ifdef USE_SELECT
+            } while (retval <= 0);
+#endif
 
             if (!(features->duplicate))
                 break;
