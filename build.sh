@@ -7,6 +7,8 @@
 SOURCE=utee.c
 BINARY=$(echo $SOURCE | cut -d. -f 1)
 
+[ -e "${BINARY}" ] && rm -f "${BINARY}"
+
 # The code can still be compiled without any of these directives present
 # NOTE: all pre-processor fields are in "" - if they are not, the file won't compile !
 
@@ -17,7 +19,7 @@ MD5_SUM=\"$(md5sum ${SOURCE} |cut -d\  -f 1)\"
 #
 # enable info-level logging
 #
-log_flags="-DLOG_INFO"
+log_flags="-DLOG_INFO -DLOG_WARN -DLOG_ERROR"
 
 #
 # configure hash functions for address hashing and for hashmap key hashing
@@ -32,7 +34,9 @@ extraflags="-DUSE_SELECT -DRCV_ON_RAW"
 #
 # debug flags
 #
-#debugflags="-DDEBUG -DDEBUG_ERRORS -DHASH_DEBUG"
+#debugflags="-DDEBUG -DDEBUG_VERBOSE -DHASH_DEBUG -DDEBUG_SOCKETS"
+#debugflags="-DDEBUG -DDEBUG_VERBOSE"
+#debugflags="-DDEBUG"
 debugflags=
 
 #
