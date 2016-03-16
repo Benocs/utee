@@ -485,26 +485,11 @@ void *tee(void *arg0) {
     setup_udp_header(udph, 0, 0, 0);
     char *data = (char *)udph + sizeof(struct udphdr);
 
-#if defined(DEBUG) || defined(LOG_ERROR)
-      char addrbuf0[INET6_ADDRSTRLEN];
+#if defined(DEBUG) || defined(LOG_ERROR) || defined(DEBUG_SOCKETS)
+    char addrbuf0[INET6_ADDRSTRLEN];
 #endif
-#if defined(DEBUG) || defined(HASH_DEBUG) || defined(LOG_ERROR)
-      char addrbuf1[INET6_ADDRSTRLEN];
-#endif
-
-#ifdef DEBUG_SOCKETS
-    uint64_t outstandingBytes, sendBuffSize, rcvBuffSize;
-    socklen_t optlen = sizeof(sendBuffSize);
-    getsockopt(ssock, SOL_SOCKET, SO_SNDBUF, &sendBuffSize, &optlen);
-    getsockopt(td->sockfd, SOL_SOCKET, SO_RCVBUF, &rcvBuffSize, &optlen);
-
-    ioctl(ssock, SIOCOUTQ, &outstandingBytes);
-    fprintf(stderr, "listener %d: send buffer: size: %lu, outstanding bytes: %lu\n",
-            td->thread_id, sendBuffSize, outstandingBytes);
-
-    ioctl(td->sockfd, SIOCINQ, &outstandingBytes);
-    fprintf(stderr, "listener %d: recv buffer: size: %lu, outstanding bytes: %lu\n",
-            td->thread_id, rcvBuffSize, outstandingBytes);
+#if defined(DEBUG) || defined(HASH_DEBUG) || defined(LOG_ERROR) || defined(DEBUG_SOCKETS)
+    char addrbuf1[INET6_ADDRSTRLEN];
 #endif
 
 #ifdef USE_SELECT
@@ -554,18 +539,6 @@ void *tee(void *arg0) {
             perror("recvfrom");
             continue;
         }
-
-#ifdef DEBUG_SOCKETS
-        ioctl(ssock, SIOCOUTQ, &outstandingBytes);
-        if ((outstandingBytes/2) >= sendBuffSize)
-            fprintf(stderr, "listener %d: send buffer: size: %lu, outstanding bytes: %lu\n",
-                    td->thread_id, sendBuffSize, outstandingBytes);
-
-        ioctl(td->sockfd, SIOCINQ, &outstandingBytes);
-        if ((outstandingBytes/2) >= rcvBuffSize)
-            fprintf(stderr, "listener %d: recv buffer: size: %lu, outstanding bytes: %lu\n",
-                    td->thread_id, rcvBuffSize, outstandingBytes);
-#endif
 
         if (numbytes > 1472) {
 #ifdef LOG_ERROR
