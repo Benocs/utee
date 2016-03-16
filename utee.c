@@ -457,7 +457,7 @@ void ht_delete_all(struct s_hashable *ht) {
     free(ht);
 }
 
-void *tee(void *arg0) {
+void *demux(void *arg0) {
     struct s_thread_data *td = (struct s_thread_data *)arg0;
     struct s_features *features = &(td->features);
     struct s_hashable** hashtable = &(td->hashtable);
@@ -670,7 +670,7 @@ void *tee(void *arg0) {
     return NULL;
 }
 
-void *duplicate(void *arg0) {
+void *tee(void *arg0) {
     uint16_t cnt;
 
     struct s_thread_data *td = (struct s_thread_data *)arg0;
@@ -1410,16 +1410,16 @@ int main(int argc, char *argv[]) {
     for (cnt = 0; cnt < num_threads; cnt++) {
         switch (mode) {
             case 'r':
-                pthread_create(&thread[cnt], NULL, &tee, (void *) &tds[cnt]);
+                pthread_create(&thread[cnt], NULL, &demux, (void *) &tds[cnt]);
             break;
             case 'd':
-                pthread_create(&thread[cnt], NULL, &duplicate, (void *) &tds[cnt]);
+                pthread_create(&thread[cnt], NULL, &tee, (void *) &tds[cnt]);
             break;
         }
     }
 
 #ifdef LOG_INFO
-    fprintf(stderr, "starting tee...\n");
+    fprintf(stderr, "starting utee...\n");
 #endif
 
     // main thread to catch/handle signals, trigger load-balancing, if enabled
