@@ -231,7 +231,8 @@ struct s_hashable* ht_get_add(struct s_hashable **ht, uint32_t addr, struct s_ta
     HASH_FIND_INT(*ht, &addr, ht_e);
     if (ht_e == NULL) {
 #if defined(HASH_DEBUG)
-        fprintf(stderr, "ht: addr: %s not found. adding output: %s:%u\n",
+        fprintf(stderr, "%lu - ht: addr: %s not found. adding output: %s:%u\n",
+            time(NULL),
             inet_ntop(AF_INET, (struct sockaddr_in *)&(addr), addrbuf0,
                 sizeof(addrbuf0)),
             inet_ntop(AF_INET,
@@ -256,7 +257,8 @@ struct s_hashable* ht_get_add(struct s_hashable **ht, uint32_t addr, struct s_ta
         smp_mb__before_atomic();
         if (sum_packetcnt) {
 #if defined(HASH_DEBUG)
-            fprintf(stderr, "ht: summing packetcnt. %lu + %lu = ",
+            fprintf(stderr, "%lu - ht: summing packetcnt. %lu + %lu = ",
+                    time(NULL),
                     atomic_read(&(ht_e->packetcnt)), packetcnt);
 #endif
             atomic_add(packetcnt, &(ht_e->packetcnt));
@@ -266,7 +268,8 @@ struct s_hashable* ht_get_add(struct s_hashable **ht, uint32_t addr, struct s_ta
         }
         else {
 #if defined(HASH_DEBUG)
-            fprintf(stderr, "ht: overwriting packetcnt. old: %lu  new: %lu\n",
+            fprintf(stderr, "%lu - ht: overwriting packetcnt. old: %lu  new: %lu\n",
+                    time(NULL),
                     atomic_read(&(ht_e->packetcnt)), packetcnt);
 #endif
             atomic_set(&(ht_e->packetcnt), packetcnt);
@@ -274,7 +277,8 @@ struct s_hashable* ht_get_add(struct s_hashable **ht, uint32_t addr, struct s_ta
         smp_mb__after_atomic();
 
 #if defined(HASH_DEBUG)
-        fprintf(stderr, "ht: addr: %s found. overwriting. using new output: %s:%u\n",
+        fprintf(stderr, "%lu - ht: addr: %s found. overwriting. using new output: %s:%u\n",
+            time(NULL),
             inet_ntop(AF_INET, (struct sockaddr_in *)&(addr), addrbuf0,
                 sizeof(addrbuf0)),
             inet_ntop(AF_INET,
@@ -286,7 +290,8 @@ struct s_hashable* ht_get_add(struct s_hashable **ht, uint32_t addr, struct s_ta
 
 #if defined(HASH_DEBUG)
     if (!added) {
-        fprintf(stderr, "ht: addr: %s found. not overwriting. using output: %s:%u\n",
+        fprintf(stderr, "%lu - ht: addr: %s found. not overwriting. using output: %s:%u\n",
+            time(NULL),
             inet_ntop(AF_INET, (struct sockaddr_in *)&(addr), addrbuf0,
                 sizeof(addrbuf0)),
             inet_ntop(AF_INET,
@@ -306,7 +311,8 @@ void ht_iterate(struct s_hashable *ht) {
 
     smp_mb__before_atomic();
     for(s=ht; s != NULL; s=s->hh.next) {
-        fprintf(stderr, "ht_iter: count: %lu\taddr: %s / %u - target: %s:%u\n",
+        fprintf(stderr, "%lu - ht_iter: count: %lu\taddr: %s / %u - target: %s:%u\n",
+            time(NULL),
             atomic_read(&(s->packetcnt)),
             inet_ntop(AF_INET, (struct sockaddr_in *)&(s->addr), addrbuf0,
                 sizeof(addrbuf0)),
@@ -337,7 +343,8 @@ void ht_find_max(struct s_hashable *ht,
         }
 
 #if defined(HASH_DEBUG)
-        fprintf(stderr, "ht_iter: count: %lu\taddr: %s, target: %s:%u\n",
+        fprintf(stderr, "%lu - ht_iter: count: %lu\taddr: %s, target: %s:%u\n",
+            time(NULL),
             atomic_read(&(s->packetcnt)),
             inet_ntop(AF_INET, (struct sockaddr_in *)&(s->addr), addrbuf0,
                 sizeof(addrbuf0)),
@@ -352,7 +359,8 @@ void ht_find_max(struct s_hashable *ht,
         *ht_e_max = t;
 
 #if defined(HASH_DEBUG)
-        fprintf(stderr, "ht_iter: max: count: %lu\taddr: %s, target: %s:%u\n",
+        fprintf(stderr, "%lu - ht_iter: max: count: %lu\taddr: %s, target: %s:%u\n",
+            time(NULL),
             atomic_read(&(t->packetcnt)),
             inet_ntop(AF_INET, (struct sockaddr_in *)&(t->addr), addrbuf0,
                 sizeof(addrbuf0)),
@@ -381,7 +389,7 @@ void ht_find_best(struct s_hashable *ht,
 
     uint64_t tcnt = 0;
 
-    fprintf(stderr, "ht_find_best: excess_packets: %lu\n", excess_packets);
+    fprintf(stderr, "%lu - ht_find_best: excess_packets: %lu\n", time(NULL), excess_packets);
 #endif
 
     smp_mb__before_atomic();
@@ -409,8 +417,9 @@ void ht_find_best(struct s_hashable *ht,
     if (t != NULL) {
         *ht_e_best = t;
 #if defined(HASH_DEBUG)
-        fprintf(stderr, "ht_find_best: tot target pkts: %lu\n", tcnt);
-        fprintf(stderr, "ht_find_best: best: count: %lu\taddr: %s, target: %s:%u\n",
+        fprintf(stderr, "%lu - ht_find_best: tot target pkts: %lu\n", time(NULL), tcnt);
+        fprintf(stderr, "%lu - ht_find_best: best: count: %lu\taddr: %s, target: %s:%u\n",
+            time(NULL),
             atomic_read(&(t->packetcnt)),
             inet_ntop(AF_INET, (struct sockaddr_in *)&(t->addr), addrbuf0,
                 sizeof(addrbuf0)),
@@ -505,15 +514,15 @@ void *demux(void *arg0) {
 #ifdef DEBUG_VERBOSE
             // print hashtable of thread 0 (they're all the same)
             if (td->thread_id == 0 && atomic_read(&(td->last_used_master_hashtable_idx)) == 0) {
-                fprintf(stderr, "listener %d: orig hashtable:\n",
-                        td->thread_id);
+                fprintf(stderr, "%lu - listener %d: orig hashtable:\n",
+                        time(NULL), td->thread_id);
                 ht_iterate(td->hashtable);
                 fprintf(stderr, "\n");
             }
 #endif
 #ifdef DEBUG
-            fprintf(stderr, "listener %d: new master hash map available (%lu)\n",
-                    td->thread_id, atomic_read(&master_hashtable_idx));
+            fprintf(stderr, "%lu - listener %d: new master hash map available (%lu)\n",
+                    time(NULL), td->thread_id, atomic_read(&master_hashtable_idx));
 #endif
 
             // copy: from, to
@@ -526,8 +535,8 @@ void *demux(void *arg0) {
 #ifdef DEBUG_VERBOSE
             // print hashtable of thread 0 (they're all the same)
             if (td->thread_id == 0) {
-                fprintf(stderr, "listener %d: new hashtable:\n",
-                        td->thread_id);
+                fprintf(stderr, "%lu - listener %d: new hashtable:\n",
+                        time(NULL), td->thread_id);
                 ht_iterate(*hashtable);
                 fprintf(stderr, "\n");
             }
@@ -542,7 +551,8 @@ void *demux(void *arg0) {
 
         if (numbytes > 1472) {
 #ifdef LOG_ERROR
-            fprintf(stderr, "ERROR: listener %d: packet is %d bytes long cropping to 1472\n", td->thread_id, numbytes);
+            fprintf(stderr, "%lu - ERROR: listener %d: packet is %d bytes long cropping to 1472\n",
+                    time(NULL), td->thread_id, numbytes);
 #endif
             numbytes = 1472;
         }
@@ -560,7 +570,8 @@ void *demux(void *arg0) {
                    target, 0, 0, 0);
 
             if (ht_e == NULL) {
-                fprintf(stderr, "ERROR: listener %d: Error while adding element to hashtable\n", td->thread_id);
+                fprintf(stderr, "%lu - ERROR: listener %d: Error while adding element to hashtable\n",
+                        time(NULL), td->thread_id);
                 exit(1);
             }
 
@@ -571,7 +582,8 @@ void *demux(void *arg0) {
 #if defined(HASH_DEBUG)
         if (features->hash_based_dist || features->load_balanced_dist)
             smp_mb__before_atomic();
-            fprintf(stderr, "listener %d: hash result for addr: target: %s:%u (count: %lu)\n",
+            fprintf(stderr, "%lu - listener %d: hash result for addr: target: %s:%u (count: %lu)\n",
+                    time(NULL),
                     td->thread_id,
                     inet_ntop(AF_INET,
                         get_in_addr((struct sockaddr *)target_addr),
@@ -589,14 +601,17 @@ void *demux(void *arg0) {
                          target_addr->sin_addr.s_addr);
 
 #ifdef DEBUG_SOCKETS
-        fprintf(stderr, "listener %d: got packet from %s:%d\n",
+        fprintf(stderr, "%lu - listener %d: got packet from %s:%d\n",
+            time(NULL),
             td->thread_id,
             inet_ntop(source_addr.ss_family,
                 get_in_addr((struct sockaddr *)&source_addr),
                 addrbuf0, sizeof(addrbuf0)),
             ntohs(((struct sockaddr_in*)&source_addr)->sin_port));
-        fprintf(stderr, "listener %d: packet is %d bytes long\n", td->thread_id, numbytes);
-        fprintf(stderr, "listener %d: sending packet: %s:%u => %s:%u: len: %u\n",
+        fprintf(stderr, "%lu - listener %d: packet is %d bytes long\n",
+                time(NULL), td->thread_id, numbytes);
+        fprintf(stderr, "%lu - listener %d: sending packet: %s:%u => %s:%u: len: %u\n",
+            time(NULL),
             td->thread_id,
             inet_ntop(AF_INET,
                 (struct sockaddr_in *)&(iph->saddr),
@@ -644,7 +659,8 @@ void *demux(void *arg0) {
                 if ( written != iph->tot_len) {
                     // handle this short write - log and move on
 #ifdef LOG_ERROR
-                    fprintf(stderr, "ERROR: listener %d: short write: sent packet: %s:%u => %s:%u: len: %u written: %d\n",
+                    fprintf(stderr, "%lu - ERROR: listener %d: short write: sent packet: %s:%u => %s:%u: len: %u written: %d\n",
+                        time(NULL),
                         td->thread_id,
                         inet_ntop(AF_INET,
                             (struct sockaddr_in *)&(iph->saddr),
@@ -664,7 +680,8 @@ void *demux(void *arg0) {
     }
 
 #ifdef LOG_INFO
-    fprintf(stderr, "[listener %u] shutting down\n", td->thread_id);
+    fprintf(stderr, "%lu - [listener %u] shutting down\n",
+            time(NULL), td->thread_id);
 #endif
     ht_delete_all(*hashtable);
     return NULL;
@@ -714,7 +731,8 @@ void *tee(void *arg0) {
 
         if (numbytes > 1472) {
 #ifdef LOG_ERROR
-            fprintf(stderr, "listener %d: packet is %d bytes long cropping to 1472\n", td->thread_id, numbytes);
+            fprintf(stderr, "%lu - listener %d: packet is %d bytes long cropping to 1472\n",
+                    time(NULL), td->thread_id, numbytes);
 #endif
             numbytes = 1472;
         }
@@ -724,14 +742,15 @@ void *tee(void *arg0) {
 #ifdef DEBUG_SOCKETS
         char addrbuf0[INET6_ADDRSTRLEN];
         char addrbuf1[INET6_ADDRSTRLEN];
-        fprintf(stderr, "listener %d: got packet from %s\n",
+        fprintf(stderr, "%lu - listener %d: got packet from %s\n",
+            time(NULL),
             td->thread_id,
             inet_ntop(source_addr.ss_family,
                 get_in_addr((struct sockaddr *)&source_addr),
                 addrbuf0, sizeof(addrbuf0)));
-        fprintf(stderr, "listener %d: packet is %d bytes long\n", td->thread_id, numbytes);
-        fprintf(stderr, "listener %d: packet contains \"%s\"\n", td->thread_id, data);
-        fprintf(stderr, "listener %d: crafting new packet...\n", td->thread_id);
+        fprintf(stderr, "%lu - listener %d: packet is %d bytes long\n", time(NULL), td->thread_id, numbytes);
+        fprintf(stderr, "%lu - listener %d: packet contains \"%s\"\n", time(NULL), td->thread_id, data);
+        fprintf(stderr, "%lu - listener %d: crafting new packet...\n", time(NULL), td->thread_id);
 #endif
 
         // check whether features->duplicate == 1
@@ -745,7 +764,8 @@ void *tee(void *arg0) {
                             target_addr.sin_addr.s_addr);
 
 #ifdef DEBUG_SOCKETS
-            fprintf(stderr, "listener %d: sending packet: %s:%u => %s:%u: len: %u\n",
+            fprintf(stderr, "%lu - listener %d: sending packet: %s:%u => %s:%u: len: %u\n",
+                time(NULL),
                 td->thread_id,
                 inet_ntop(AF_INET,
                     (struct sockaddr_in *)&(iph->saddr),
@@ -783,7 +803,8 @@ void *tee(void *arg0) {
                     if ( written != iph->tot_len) {
                         // handle this short write - log and move on
 #ifdef LOG_ERROR
-                        fprintf(stderr, "ERROR: listener %d: short write: sent packet: %s:%u => %s:%u: len: %u written: %d\n",
+                        fprintf(stderr, "%lu - ERROR: listener %d: short write: sent packet: %s:%u => %s:%u: len: %u written: %d\n",
+                            time(NULL),
                             td->thread_id,
                             inet_ntop(AF_INET,
                                 (struct sockaddr_in *)&(iph->saddr),
@@ -806,7 +827,7 @@ void *tee(void *arg0) {
         }
     }
 #ifdef LOG_INFO
-    fprintf(stderr, "[listener-%u] shutting down\n", td->thread_id);
+    fprintf(stderr, "%lu - [listener-%u] shutting down\n", time(NULL), td->thread_id);
 #endif
     return NULL;
 }
@@ -850,7 +871,8 @@ int prepare_sending_socket(struct sockaddr *addr, socklen_t len, uint32_t pipe_s
     int s = 0;
 
     if ((s = socket(addr->sa_family, SOCK_RAW, IPPROTO_RAW)) == -1) {
-        fprintf(stderr, "ERROR: cannot create sending socket: %s\n", strerror(errno));
+        fprintf(stderr, "%lu - ERROR: cannot create sending socket: %s\n",
+                time(NULL), strerror(errno));
         exit(1);
     }
 
@@ -867,20 +889,23 @@ int prepare_sending_socket(struct sockaddr *addr, socklen_t len, uint32_t pipe_s
             getsockopt(s, SOL_SOCKET, SO_SNDBUF, &obtained, &optlen);
         }
 #ifdef LOG_INFO
-        fprintf(stderr, "INFO: sending socket: pipe_size: obtained=%d target=%u saved=%u\n", obtained, pipe_size, saved);
+        fprintf(stderr, "%lu - INFO: sending socket: pipe_size: obtained=%d target=%u saved=%u\n",
+                time(NULL), obtained, pipe_size, saved);
 #endif
     }
 
 #ifdef DEBUG
     char addrbuf[INET6_ADDRSTRLEN];
-    fprintf(stderr, "connecting to target: %s:%d\n",
+    fprintf(stderr, "%lu - connecting to target: %s:%d\n",
+        time(NULL),
         inet_ntop(AF_INET,
             get_in_addr((struct sockaddr *)(addr)),
             addrbuf, sizeof(addrbuf)),
         ntohs(((struct sockaddr_in*)addr)->sin_port));
 #endif
     if (connect(s, addr, len) == -1) {
-        fprintf(stderr, "ERROR: connect(): %s\n", strerror(errno));
+        fprintf(stderr, "%lu - ERROR: connect(): %s\n",
+                time(NULL), strerror(errno));
         exit(1);
     }
 
@@ -917,7 +942,8 @@ void init_sending_sockets(struct s_target* targets,
         if (sa->sa_family != 0) {
             if ((err = getnameinfo(sa, target->dest_len, dest_addr, sizeof(dest_addr),
                     dest_serv, sizeof(dest_serv), NI_NUMERICHOST)) == -1) {
-                fprintf(stderr, "ERROR: getnameinfo: %d\n", err);
+                fprintf(stderr, "%lu - ERROR: getnameinfo: %d\n",
+                        time(NULL), err);
                 exit(1);
             }
         }
@@ -925,7 +951,8 @@ void init_sending_sockets(struct s_target* targets,
         target->fd = prepare_sending_socket((struct sockaddr *) &target->dest, target->dest_len, pipe_size);
 
 #ifdef LOG_INFO
-        fprintf(stderr, "receiver: %s:%d :: fd: %d\n",
+        fprintf(stderr, "%lu - receiver: %s:%d :: fd: %d\n",
+            time(NULL),
             inet_ntop(AF_INET,
                 get_in_addr((struct sockaddr *)&(target->dest)),
                 addrbuf, sizeof(addrbuf)),
@@ -958,7 +985,8 @@ int open_listener_socket(char* laddr, int lport, uint32_t pipe_size) {
         setsocksize(lsock, SOL_SOCKET, SO_RCVBUF, &pipe_size, optlen);
         getsockopt(lsock, SOL_SOCKET, SO_RCVBUF, &obtained, &optlen);
 #ifdef LOG_INFO
-        fprintf(stderr, "INFO: listening socket: pipe_size: obtained=%d target=%u saved=%u\n", obtained, pipe_size, saved);
+        fprintf(stderr, "%lu - INFO: listening socket: pipe_size: obtained=%d target=%u saved=%u\n",
+                time(NULL), obtained, pipe_size, saved);
 #endif
     }
 
@@ -1030,25 +1058,30 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
 
     if (tot_cnt < threshold) {
 #if defined(DEBUG)
-        fprintf(stderr, "not load balancing: tot_cnt < threshold: %lu < %lu\n", tot_cnt, threshold);
+        fprintf(stderr, "%lu - not load balancing: tot_cnt < threshold: %lu < %lu\n",
+                time(NULL), tot_cnt, threshold);
 #endif
         return;
     }
 
 #if defined(DEBUG)
-    fprintf(stderr, "len(master_hashtable) before thread merging: %u\n", HASH_COUNT(*master_hashtable));
+    fprintf(stderr, "%lu - len(master_hashtable) before thread merging: %u\n",
+            time(NULL), HASH_COUNT(*master_hashtable));
 #endif
     // merge hashmaps
     for (cnt = 0; cnt < num_threads; cnt++) {
 #if defined(DEBUG)
-        fprintf(stderr, "merging thread hash maps into master. thread: %u\n", cnt);
+        fprintf(stderr, "%lu - merging thread hash maps into master. thread: %u\n",
+                time(NULL), cnt);
 #endif
 #if defined(LOG_ERROR)
         if (tds[cnt].hashtable == *master_hashtable)
-            fprintf(stderr, "[ERR] master hash table is same as thread's %u table\n", cnt);
+            fprintf(stderr, "%lu - [ERR] master hash table is same as thread's %u table\n",
+                    time(NULL), cnt);
 #endif
 #if defined(DEBUG)
-        fprintf(stderr, "tds[%u].hashtable: %p - master: %p\n", cnt, tds[cnt].hashtable, *master_hashtable);
+        fprintf(stderr, "%lu - tds[%u].hashtable: %p - master: %p\n",
+                time(NULL), cnt, tds[cnt].hashtable, *master_hashtable);
 #endif
         smp_mb__before_atomic();
         for(s=tds[cnt].hashtable; s != NULL; s=s->hh.next) {
@@ -1060,7 +1093,8 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
     }
 
 #if defined(DEBUG)
-    fprintf(stderr, "len(master_hashtable) after thread merging: %u\n", HASH_COUNT(*master_hashtable));
+    fprintf(stderr, "%lu - len(master_hashtable) after thread merging: %u\n",
+            time(NULL), HASH_COUNT(*master_hashtable));
 #endif
 
     for(s=*master_hashtable; s != NULL; s=s->hh.next) {
@@ -1070,8 +1104,9 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
 #if defined(LOG_INFO)
     // only print stats if there were any forwarded packets since last optimization iteration
     if (tot_cnt) {
-        fprintf(stderr, "lb cnt stats. ideal=%.4f thresh=[%.4f, %.4f] "
+        fprintf(stderr, "%lu - lb cnt stats. ideal=%.4f thresh=[%.4f, %.4f] "
                 "tot=%lu\n\t",
+                time(NULL),
                 ideal_avg,
                 ideal_avg - (ideal_avg * (double) reorder_threshold),
                 ideal_avg + (ideal_avg * (double) reorder_threshold),
@@ -1102,19 +1137,21 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
         else
             hit_reordering_threshold = 0;
 #if defined(DEBUG)
-        fprintf(stderr, "hit_reordering_threshold: %u\n", hit_reordering_threshold);
+        fprintf(stderr, "%lu - hit_reordering_threshold: %u\n",
+                time(NULL), hit_reordering_threshold);
 #endif
         // if !hit_reordering_threshold, abort optimization
         if (!hit_reordering_threshold)
             break;
 
 #if defined(LOG_INFO)
-        fprintf(stderr, "optimization iteration: %u of max %u\n",
-                itcnt+1, MAXOPTIMIZATIONITERATIONS);
+        fprintf(stderr, "%lu - optimization iteration: %u of max %u\n",
+                time(NULL), itcnt+1, MAXOPTIMIZATIONITERATIONS);
 #endif
 #if defined(DEBUG)
-        fprintf(stderr, "load_balance: out_min: %s:%u (%lu), "
+        fprintf(stderr, "%lu - load_balance: out_min: %s:%u (%lu), "
                 "out_max: %s:%u (%lu)\n",
+                time(NULL),
                 inet_ntop(AF_INET,
                     get_in_addr((struct sockaddr *)&(tds[0].targets[target_min_idx].dest)),
                     addrbuf0, sizeof(addrbuf0)),
@@ -1131,7 +1168,8 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
         // calculate ideal excess lines/hits
         excess_packets = per_target_pkt_cnt[target_max_idx] - per_target_pkt_cnt[target_min_idx];
 #if defined(LOG_INFO)
-        fprintf(stderr, "line diff: %lu - min(%u): %lu, max(%u): %lu, trying to shift up to %lu pkts\n",
+        fprintf(stderr, "%lu - line diff: %lu - min(%u): %lu, max(%u): %lu, trying to shift up to %lu pkts\n",
+                time(NULL),
                 excess_packets,
                 target_min_idx,
                 per_target_pkt_cnt[target_min_idx],
@@ -1145,13 +1183,14 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
 
         // cannot find any matching hashtable entry. abort
         if (ht_e_best == NULL) {
-            fprintf(stderr,  "[ERROR] no ht_e_best found\n");
+            fprintf(stderr,  "%lu - [ERROR] no ht_e_best found\n", time(NULL));
             break;
         }
 
 #if defined(LOG_INFO)
 
-        fprintf(stderr, "moving high hitter: %s from: %s:%u (%p) to %s:%u (%p) (count: %lu)\n",
+        fprintf(stderr, "%lu - moving high hitter: %s from: %s:%u (%p) to %s:%u (%p) (count: %lu)\n",
+            time(NULL),
             inet_ntop(AF_INET, (struct sockaddr_in *)&(ht_e_best->addr), addrbuf0,
                 sizeof(addrbuf0)),
 
@@ -1198,7 +1237,8 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
 
         if (threads_reading_from_master) {
 #if defined(LOG_WARN)
-            fprintf(stderr, "waiting for threads to release master_hashtable\n");
+            fprintf(stderr, "%lu - waiting for threads to release master_hashtable\n",
+                    time(NULL));
 #endif
             sleep(1);
         }
@@ -1212,7 +1252,8 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
     for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
         atomic_set(&(tds[0].targets[cnt].packetcnt), 0);
     }
-    fprintf(stderr, "\n===================================================\n");
+    fprintf(stderr, "\n%lu ===================================================\n",
+            time(NULL));
 
     // set next hashtable as ro
     master_hashtable_ro = *master_hashtable;
@@ -1224,7 +1265,8 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
     atomic_inc(&master_hashtable_idx);
     smp_mb__after_atomic();
 #if defined(DEBUG)
-    fprintf(stderr, "len(master_hashtable) after swapping to ro: %u\n", HASH_COUNT(*master_hashtable));
+    fprintf(stderr, "%lu - len(master_hashtable) after swapping to ro: %u\n",
+            time(NULL), HASH_COUNT(*master_hashtable));
 #endif
 }
 
@@ -1233,7 +1275,8 @@ void sig_handler_toggle_optional_output(int signum) {
 
     optional_output_enabled = (!optional_output_enabled);
 #if defined(LOG_INFO)
-    fprintf(stderr, "[signal] toggling optional output: %u\n", optional_output_enabled);
+    fprintf(stderr, "%lu - [signal] toggling optional output: %u\n",
+            time(NULL), optional_output_enabled);
 #endif
 
     for (cnt = 0; cnt < num_threads; cnt++) {
@@ -1244,13 +1287,14 @@ void sig_handler_toggle_optional_output(int signum) {
 void sig_handler_shutdown(int signum) {
     run_flag = 0;
 #if defined(LOG_INFO)
-    fprintf(stderr, "[signal] requesting shutdown\n");
+    fprintf(stderr, "%lu - [signal] requesting shutdown\n", time(NULL));
 #endif
 }
 
 void sig_handler_ignore(int signum) {
 #if defined(LOG_INFO)
-    fprintf(stderr, "[signal] ignoring signal: %d\n", signum);
+    fprintf(stderr, "%lu - [signal] ignoring signal: %d\n",
+            time(NULL), signum);
 #endif
 }
 
@@ -1304,25 +1348,29 @@ int main(int argc, char *argv[]) {
         case 'l':
             split_addr(optarg, listenaddr, &listenport);
 #ifdef DEBUG
-            fprintf(stderr, "listen address: %s:%u\n", listenaddr, listenport);
+            fprintf(stderr, "%lu - listen address: %s:%u\n",
+                    time(NULL), listenaddr, listenport);
 #endif
         break;
         case 'H':
             hash_based_dist_enabled = 1;
 #ifdef DEBUG
-            fprintf(stderr, "use hash-based while distributing\n");
+            fprintf(stderr, "%lu - use hash-based while distributing\n",
+                    time(NULL));
 #endif
         break;
         case 'L':
             loadbalanced_dist_enabled = 1;
 #ifdef DEBUG
-            fprintf(stderr, "use load-balancing while distributing\n");
+            fprintf(stderr, "%lu - use load-balancing while distributing\n",
+                    time(NULL));
 #endif
         break;
         case 'n':
             num_threads = atoi(optarg);
 #ifdef DEBUG
-            fprintf(stderr, "number of threads: %u\n", num_threads);
+            fprintf(stderr, "%lu - number of threads: %u\n",
+                    time(NULL), num_threads);
 #endif
         break;
         case 'm':
@@ -1330,19 +1378,22 @@ int main(int argc, char *argv[]) {
                 case 'r':
                     mode = 'r';
 #ifdef DEBUG
-                    fprintf(stderr, "mode: round-robin distribution\n");
+                    fprintf(stderr, "%lu - mode: round-robin distribution\n",
+                            time(NULL));
 #endif
                 break;
                 case 'd':
                     mode = 'd';
 #ifdef DEBUG
-                    fprintf(stderr, "mode: duplicate\n");
+                    fprintf(stderr, "%lu - mode: duplicate\n",
+                            time(NULL));
 #endif
                 break;
                 default:
                     mode = 255;
 #ifdef DEBUG
-                    fprintf(stderr, "invalid mode 0x%x\n", mode);
+                    fprintf(stderr, "%lu - invalid mode 0x%x\n",
+                            time(NULL), mode);
 #endif
                     usage(argc, argv);
                 break;
@@ -1351,13 +1402,15 @@ int main(int argc, char *argv[]) {
         case 'i':
             threshold = atoi(optarg);
 #ifdef DEBUG
-            fprintf(stderr, "load balance every: %lu lines\n", threshold);
+            fprintf(stderr, "%lu - load balance every: %lu lines\n",
+                    time(NULL), threshold);
 #endif
         break;
         case 't':
             reorder_threshold = atof(optarg);
 #ifdef DEBUG
-            fprintf(stderr, "load balance inter-target threshold: %.2f\n", reorder_threshold);
+            fprintf(stderr, "%lu - load balance inter-target threshold: %.2f\n",
+                    time(NULL), reorder_threshold);
 #endif
         break;
         default:
@@ -1373,7 +1426,8 @@ int main(int argc, char *argv[]) {
     signal(SIGUSR2, sig_handler_ignore);
 
 #ifdef DEBUG
-    fprintf(stderr, "setting up listener socket...\n");
+    fprintf(stderr, "%lu - setting up listener socket...\n",
+            time(NULL));
 #endif
     lsock = open_listener_socket(listenaddr, listenport, pipe_size);
 
@@ -1419,7 +1473,7 @@ int main(int argc, char *argv[]) {
     }
 
 #ifdef LOG_INFO
-    fprintf(stderr, "starting utee...\n");
+    fprintf(stderr, "%lu - starting utee...\n", time(NULL));
 #endif
 
     // main thread to catch/handle signals, trigger load-balancing, if enabled
@@ -1433,7 +1487,7 @@ int main(int argc, char *argv[]) {
         sleep(1);
     }
 #ifdef LOG_INFO
-    fprintf(stderr, "[main] shutting down\n");
+    fprintf(stderr, "%lu - [main] shutting down\n", time(NULL));
 #endif
 
     for (cnt = 0; cnt < num_threads; cnt++) {
