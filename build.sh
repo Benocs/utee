@@ -29,7 +29,9 @@ hash_flags="-DHASH_ADDR=HASH_MOD -DHASH_FUNCTION=HASH_JEN"
 #
 # optional feature switches
 #
-extraflags="-DUSE_SELECT -DRCV_ON_RAW"
+#extraflags="-DUSE_SELECT_READ -DUSE_SELECT_WRITE -DRCV_ON_RAW"
+extraflags="-DUSE_SELECT_WRITE -DRCV_ON_RAW"
+#extraflags="-DRCV_ON_RAW"
 
 #
 # debug flags

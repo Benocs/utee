@@ -501,10 +501,12 @@ void *demux(void *arg0) {
     char addrbuf1[INET6_ADDRSTRLEN];
 #endif
 
-#ifdef USE_SELECT
+#if defined(USE_SELECT_READ) || defined(USE_SELECT_WRITE)
+    fd_set rfds;
     fd_set wfds;
     struct timeval tv;
     int retval;
+    FD_ZERO(&rfds);
     FD_ZERO(&wfds);
 #endif
 
@@ -543,6 +545,20 @@ void *demux(void *arg0) {
 #endif
         }
 
+#ifdef USE_SELECT_READ
+        tv.tv_sec = 0;
+        tv.tv_usec = 100000;
+        FD_SET(td->sockfd, &rfds);
+        retval = select((td->sockfd)+1, &rfds, NULL, NULL, &tv);
+
+        if (retval == -1) {
+            perror("select()");
+            continue;
+        }
+        else if (!retval) {
+            continue;
+        }
+#endif
         if ((numbytes = recvfrom(td->sockfd, data, BUFLEN-sizeof(struct iphdr)-sizeof(struct udphdr), 0,
             (struct sockaddr *)&source_addr, &addr_len)) == -1) {
             perror("recvfrom");
@@ -624,7 +640,7 @@ void *demux(void *arg0) {
             iph->tot_len);
 #endif
 
-#ifdef USE_SELECT
+#ifdef USE_SELECT_WRITE
         do {
             do {
                 tv.tv_sec = 0;
@@ -640,7 +656,7 @@ void *demux(void *arg0) {
             if ((written = sendto(target->fd, datagram, iph->tot_len, 0, (struct sockaddr *) target_addr, sizeof(*target_addr))) < 0) {
                 perror("sendto failed");
                 fprintf(stderr, "%lu - listener %d: error in write %s - %d\n", time(NULL), td->thread_id, strerror(errno), errno);
-#ifdef USE_SELECT
+#ifdef USE_SELECT_WRITE
                 retval = -1;
 #endif
             }
@@ -674,7 +690,7 @@ void *demux(void *arg0) {
 #endif
                 }
             }
-#ifdef USE_SELECT
+#ifdef USE_SELECT_WRITE
         } while (retval <= 0);
 #endif
     }
@@ -715,14 +731,30 @@ void *tee(void *arg0) {
     char addrbuf1[INET6_ADDRSTRLEN];
 #endif
 
-#ifdef USE_SELECT
+#if defined(USE_SELECT_READ) || defined(USE_SELECT_WRITE)
+    fd_set rfds;
     fd_set wfds;
     struct timeval tv;
     int retval;
+    FD_ZERO(&rfds);
     FD_ZERO(&wfds);
 #endif
 
     while (run_flag) {
+#ifdef USE_SELECT_READ
+        tv.tv_sec = 0;
+        tv.tv_usec = 100000;
+        FD_SET(td->sockfd, &rfds);
+        retval = select((td->sockfd)+1, &rfds, NULL, NULL, &tv);
+
+        if (retval == -1) {
+            perror("select()");
+            continue;
+        }
+        else if (!retval) {
+            continue;
+        }
+#endif
         if ((numbytes = recvfrom(td->sockfd, data, BUFLEN-sizeof(struct iphdr)-sizeof(struct udphdr), 0,
             (struct sockaddr *)&source_addr, &addr_len)) == -1) {
             perror("recvfrom");
@@ -778,7 +810,7 @@ void *tee(void *arg0) {
                 iph->tot_len);
 #endif
 
-#ifdef USE_SELECT
+#ifdef USE_SELECT_WRITE
             do {
                 do {
                     tv.tv_sec = 0;
@@ -795,7 +827,7 @@ void *tee(void *arg0) {
                     perror("sendto failed");
                     fprintf(stderr, "%lu - listener %d: error in write %s - %d\n",
                             time(NULL), td->thread_id, strerror(errno), errno);
-#ifdef USE_SELECT
+#ifdef USE_SELECT_WRITE
                     retval = -1;
 #endif
                 }
@@ -818,7 +850,7 @@ void *tee(void *arg0) {
 #endif
                     }
                 }
-#ifdef USE_SELECT
+#ifdef USE_SELECT_WRITE
             } while (retval <= 0);
 #endif
 
