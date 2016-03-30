@@ -1137,7 +1137,7 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
     // only print stats if there were any forwarded packets since last optimization iteration
     if (tot_cnt) {
         fprintf(stderr, "%lu - lb cnt stats. ideal=%.4f thresh=[%.4f, %.4f] "
-                "tot=%lu\n\t",
+                "tot=%lu\nrelative counts:\n\t",
                 time(NULL),
                 ideal_avg,
                 ideal_avg - (ideal_avg * (double) reorder_threshold),
@@ -1145,6 +1145,12 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
                 global_total_cnt);
         for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
             fprintf(stderr, "%2u=%.4f ", cnt, per_target_pkt_cnt[cnt] / (double)tot_cnt);
+            if (cnt && (cnt+1) % 8 == 0)
+                fprintf(stderr, "\n\t");
+        }
+        fprintf(stderr, "\nabsolute counts:\n\t");
+        for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
+            fprintf(stderr, "%2u=%lu ", cnt, per_target_pkt_cnt[cnt]);
             if (cnt && (cnt+1) % 8 == 0)
                 fprintf(stderr, "\n\t");
         }
