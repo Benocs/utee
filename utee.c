@@ -1454,7 +1454,9 @@ int main(int argc, char *argv[]) {
         default:
             usage(argc, argv);
     }
-    if (mode == 0xFF || num_threads == 0 || listenport == 0 || (num_threads > MAXTHREADS))
+    num_targets = argc - optind;
+    if (mode == 0xFF || num_threads == 0 || listenport == 0 ||
+            (num_threads > MAXTHREADS) || (num_targets == 0))
         usage(argc, argv);
 
     signal(SIGUSR1, sig_handler_toggle_optional_output);
@@ -1469,7 +1471,6 @@ int main(int argc, char *argv[]) {
 #endif
     lsock = open_listener_socket(listenaddr, listenport, pipe_size);
 
-    num_targets = argc - optind;
 
     bzero(tds, sizeof(tds));
     // this one loops over all threads
