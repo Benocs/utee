@@ -1,5 +1,22 @@
 /* utee - transparent udp tee proxy
  *
+ * Copyright (C) 2016 Benocs
+ * Author: Robert Wuttke <robert@benocs.com>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; version 2
+ * of the License.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ *
  * support for:
  *  * round-robin load-balance
  *  ** hash-based load-balance
@@ -47,7 +64,6 @@
 /*
  * TODO:
  * * implement full IPv6 support
- * * clean code, commit. - test duplicate in legacy-utee, deploy, test new utee on 2nd output
  */
 
 #define BUFLEN 4096
@@ -1058,8 +1074,7 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
     double ideal_avg = (1 / (double)tds[0].num_targets);
     double target_avg;
 
-    // TODO: this is not overflow-safe (but only used when printing, so no bug)
-    // TODO: clean code, commit. - test duplicate in legacy-utee, deploy, test new utee on 2nd output
+    // NOTE: this is not overflow-safe (but only used when printing, so no bug)
     static uint64_t global_total_cnt = 0;
 
     uint8_t threads_reading_from_master;
