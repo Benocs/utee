@@ -457,6 +457,32 @@ void ht_find_best(struct s_hashable *ht,
     }
 }
 
+uint32_t ht_target_count(struct s_hashable *ht, struct s_target *target) {
+
+    uint32_t count = 0;
+    struct s_hashable *s;
+
+#if defined(HASH_DEBUG) || defined(LOAD_BALANCE_DEBUG)
+    char addrbuf0[INET6_ADDRSTRLEN];
+#endif
+
+    smp_mb__before_atomic();
+    for(s=ht; s != NULL; s=s->hh.next)
+        if (s->target == target)
+            count++;
+
+#if defined(HASH_DEBUG) || defined(LOAD_BALANCE_DEBUG)
+    fprintf(stderr, "%lu - ht_target_count: target: %s:%u, count: %u\n",
+        time(NULL),
+        inet_ntop(AF_INET,
+            get_in_addr((struct sockaddr *)&(target->dest)),
+            addrbuf0, sizeof(addrbuf1)),
+        ntohs(((struct sockaddr_in *)&(target->dest))->sin_port),
+        count);
+#endif
+    return count;
+}
+
 void ht_copy(struct s_hashable *ht_from, struct s_hashable **ht_to) {
     struct s_hashable *s;
 
@@ -469,6 +495,7 @@ void ht_copy(struct s_hashable *ht_from, struct s_hashable **ht_to) {
                 1,
                 0);
     }
+    smp_mb__after_atomic();
 }
 
 void ht_reset_counters(struct s_hashable *ht) {
@@ -1184,13 +1211,17 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
 #endif
 
     for (itcnt = 0; itcnt < MAXOPTIMIZATIONITERATIONS; itcnt++) {
+        ht_e_best = NULL;
+
         // find target with smallest counter and target with largest counter
         target_min_idx = 0;
         target_max_idx = 0;
+
         for (cnt = 1; cnt < tds[0].num_targets; cnt++ ) {
             if (per_target_pkt_cnt[cnt] < per_target_pkt_cnt[target_min_idx])
                 target_min_idx = cnt;
-            if (per_target_pkt_cnt[cnt] > per_target_pkt_cnt[target_max_idx])
+            if (per_target_pkt_cnt[cnt] > per_target_pkt_cnt[target_max_idx] &&
+                    ht_target_count(*master_hashtable, &(tds[0].targets[cnt])) > 1)
                 target_max_idx = cnt;
         }
 
