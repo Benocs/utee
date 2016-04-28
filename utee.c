@@ -1221,7 +1221,7 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
         // calculate ideal excess lines/hits
         excess_packets = per_target_pkt_cnt[target_max_idx] - per_target_pkt_cnt[target_min_idx];
 #if defined(LOG_INFO)
-        fprintf(stderr, "%lu - line diff: %lu - min(%u): %lu, max(%u): %lu, trying to shift up to %lu pkts\n",
+        fprintf(stderr, "%lu - line diff: %lu - min(%u): %lu, max(%u): %lu, trying to shift up to %lu bytes\n",
                 time(NULL),
                 excess_packets,
                 target_min_idx,
