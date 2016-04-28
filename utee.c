@@ -681,10 +681,10 @@ void *demux(void *arg0) {
                     // NOTE: need atomic_inc for target-cnt as it is shared between all threads
 
                     smp_mb__before_atomic();
-                    // update per source packetcnt
-                    atomic_inc(&(ht_e->packetcnt));
-                    // update per target packetcnt
-                    atomic_inc(&(target->packetcnt));
+                    // update per source bytecnt
+                    atomic_add(written, &(ht_e->packetcnt));
+                    // update per target bytetcnt
+                    atomic_add(written, &(target->packetcnt));
                     smp_mb__after_atomic();
                 }
 
