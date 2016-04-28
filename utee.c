@@ -476,7 +476,7 @@ uint32_t ht_target_count(struct s_hashable *ht, struct s_target *target) {
         time(NULL),
         inet_ntop(AF_INET,
             get_in_addr((struct sockaddr *)&(target->dest)),
-            addrbuf0, sizeof(addrbuf1)),
+            addrbuf0, sizeof(addrbuf0)),
         ntohs(((struct sockaddr_in *)&(target->dest))->sin_port),
         count);
 #endif
