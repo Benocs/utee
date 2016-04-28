@@ -347,7 +347,7 @@ void ht_find_max(struct s_hashable *ht,
     struct s_hashable *s;
     struct s_hashable *t = *ht_e_max;
 
-#if defined(HASH_DEBUG)
+#if defined(HASH_DEBUG) || defined(LOAD_BALANCE_DEBUG)
     char addrbuf0[INET6_ADDRSTRLEN];
     char addrbuf1[INET6_ADDRSTRLEN];
 #endif
@@ -358,7 +358,7 @@ void ht_find_max(struct s_hashable *ht,
             t = s;
         }
 
-#if defined(HASH_DEBUG)
+#if defined(HASH_DEBUG) || defined(LOAD_BALANCE_DEBUG)
         fprintf(stderr, "%lu - ht_iter: count: %lu\taddr: %s, target: %s:%u\n",
             time(NULL),
             atomic_read(&(s->packetcnt)),
@@ -374,7 +374,7 @@ void ht_find_max(struct s_hashable *ht,
     if (t != NULL) {
         *ht_e_max = t;
 
-#if defined(HASH_DEBUG)
+#if defined(HASH_DEBUG) || defined(LOAD_BALANCE_DEBUG)
         fprintf(stderr, "%lu - ht_iter: max: count: %lu\taddr: %s, target: %s:%u\n",
             time(NULL),
             atomic_read(&(t->packetcnt)),
@@ -399,7 +399,7 @@ void ht_find_best(struct s_hashable *ht,
     uint64_t abs_current = excess_packets;
     uint64_t abs_candidate;
 
-#if defined(HASH_DEBUG)
+#if defined(HASH_DEBUG) || defined(LOAD_BALANCE_DEBUG)
     char addrbuf0[INET6_ADDRSTRLEN];
     char addrbuf1[INET6_ADDRSTRLEN];
 
@@ -414,7 +414,7 @@ void ht_find_best(struct s_hashable *ht,
         if (s->target != target)
             continue;
 
-#if defined(HASH_DEBUG)
+#if defined(HASH_DEBUG) || defined(LOAD_BALANCE_DEBUG)
         tcnt += atomic_read(&(s->packetcnt));
 #endif
         // do not ever over shoot
@@ -432,7 +432,7 @@ void ht_find_best(struct s_hashable *ht,
 
     if (t != NULL) {
         *ht_e_best = t;
-#if defined(HASH_DEBUG)
+#if defined(HASH_DEBUG) || defined(LOAD_BALANCE_DEBUG)
         fprintf(stderr, "%lu - ht_find_best: tot target pkts: %lu\n", time(NULL), tcnt);
         fprintf(stderr, "%lu - ht_find_best: best: count: %lu\taddr: %s, target: %s:%u\n",
             time(NULL),
