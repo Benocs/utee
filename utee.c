@@ -416,6 +416,16 @@ void ht_find_best(struct s_hashable *ht,
 
 #if defined(HASH_DEBUG) || defined(LOAD_BALANCE_DEBUG)
         tcnt += atomic_read(&(s->packetcnt));
+
+        fprintf(stderr, "%lu - ht_find_best: count: %lu\taddr: %s, target: %s:%u\n",
+            time(NULL),
+            atomic_read(&(s->packetcnt)),
+            inet_ntop(AF_INET, (struct sockaddr_in *)&(s->addr), addrbuf0,
+                sizeof(addrbuf0)),
+            inet_ntop(AF_INET,
+                get_in_addr((struct sockaddr *)&(s->target->dest)),
+                addrbuf1, sizeof(addrbuf1)),
+            ntohs(((struct sockaddr_in *)&(s->target->dest))->sin_port));
 #endif
         // do not ever over shoot
         if (atomic_read(&(s->packetcnt)) > excess_packets)
