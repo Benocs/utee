@@ -4,7 +4,7 @@
 # build utee
 ##################################
 
-SOURCE=utee.c
+SOURCE="utee.c libutee.c"
 BINARY=$(echo $SOURCE | cut -d. -f 1)
 
 [ -e "${BINARY}" ] && rm -f "${BINARY}"
@@ -14,7 +14,10 @@ BINARY=$(echo $SOURCE | cut -d. -f 1)
 
 GIT_REVISION=\"$(git log --pretty=oneline | head -n 1 | cut -d\  -f 1)\"
 COMPILE_TIME=\"$(date +"%d.%m.%Y %H:%M:%S")\"
-MD5_SUM=\"$(md5sum ${SOURCE} |cut -d\  -f 1)\"
+MD5_SUM=\"$(mkdir tmp_md5 && cp ${SOURCE} tmp_md5 && \
+    tar cf tmp_md5.tar tmp_md5 && \
+    md5sum tmp_md5.tar | cut -d\  -f 1; \
+    rm -rf tmp_md5 tmp_md5.tar)\"
 
 #
 # enable info-level logging
@@ -30,17 +33,17 @@ hash_flags="-DHASH_ADDR=HASH_MOD -DHASH_FUNCTION=HASH_JEN"
 # optional feature switches
 #
 #extraflags="-DRCV_ON_RAW"
-extraflags="-DUSE_SELECT_WRITE -DRCV_ON_RAW"
-#extraflags="-DUSE_SELECT_READ -DUSE_SELECT_WRITE -DRCV_ON_RAW"
+#extraflags="-DUSE_SELECT_WRITE -DRCV_ON_RAW"
+extraflags="-DUSE_SELECT_READ -DUSE_SELECT_WRITE -DRCV_ON_RAW"
 
 #
 # debug flags
 #
-debugflags=
+#debugflags=
 #debugflags="-DDEBUG"
 #debugflags="-DDEBUG -DDEBUG_VERBOSE"
 #debugflags="-DDEBUG -DDEBUG_VERBOSE -DHASH_DEBUG -DDEBUG_SOCKETS"
-#debugflags="-DDEBUG -DDEBUG_VERBOSE -DHASH_DEBUG -DDEBUG_SOCKETS -DLOAD_BALANCE_DEBUG"
+debugflags="-DDEBUG -DDEBUG_VERBOSE -DHASH_DEBUG -DDEBUG_SOCKETS -DLOAD_BALANCE_DEBUG"
 
 #
 # (debug) build
