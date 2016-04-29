@@ -1494,7 +1494,7 @@ int main(int argc, char *argv[]) {
             }
         break;
         case 'i':
-            threshold = atoi(optarg);
+            threshold = strtoul(optarg, NULL, 10);
 #ifdef DEBUG
             fprintf(stderr, "%lu - load balance every: %lu lines\n",
                     time(NULL), threshold);
