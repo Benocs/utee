@@ -29,17 +29,18 @@ hash_flags="-DHASH_ADDR=HASH_MOD -DHASH_FUNCTION=HASH_JEN"
 #
 # optional feature switches
 #
-#extraflags="-DUSE_SELECT_READ -DUSE_SELECT_WRITE -DRCV_ON_RAW"
-extraflags="-DUSE_SELECT_WRITE -DRCV_ON_RAW"
 #extraflags="-DRCV_ON_RAW"
+extraflags="-DUSE_SELECT_WRITE -DRCV_ON_RAW"
+#extraflags="-DUSE_SELECT_READ -DUSE_SELECT_WRITE -DRCV_ON_RAW"
 
 #
 # debug flags
 #
-#debugflags="-DDEBUG -DDEBUG_VERBOSE -DHASH_DEBUG -DDEBUG_SOCKETS"
-#debugflags="-DDEBUG -DDEBUG_VERBOSE"
-#debugflags="-DDEBUG"
 debugflags=
+#debugflags="-DDEBUG"
+#debugflags="-DDEBUG -DDEBUG_VERBOSE"
+#debugflags="-DDEBUG -DDEBUG_VERBOSE -DHASH_DEBUG -DDEBUG_SOCKETS"
+#debugflags="-DDEBUG -DDEBUG_VERBOSE -DHASH_DEBUG -DDEBUG_SOCKETS -DLOAD_BALANCE_DEBUG"
 
 #
 # (debug) build
