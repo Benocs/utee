@@ -1441,28 +1441,28 @@ int main(int argc, char *argv[]) {
     switch (c) {
         case 'l':
             split_addr(optarg, listenaddr, &listenport);
-#ifdef DEBUG
+#ifdef LOG_INFO
             fprintf(stderr, "%lu - listen address: %s:%u\n",
                     time(NULL), listenaddr, listenport);
 #endif
         break;
         case 'H':
             hash_based_dist_enabled = 1;
-#ifdef DEBUG
+#ifdef LOG_INFO
             fprintf(stderr, "%lu - use hash-based while distributing\n",
                     time(NULL));
 #endif
         break;
         case 'L':
             loadbalanced_dist_enabled = 1;
-#ifdef DEBUG
+#ifdef LOG_INFO
             fprintf(stderr, "%lu - use load-balancing while distributing\n",
                     time(NULL));
 #endif
         break;
         case 'n':
             num_threads = atoi(optarg);
-#ifdef DEBUG
+#ifdef LOG_INFO
             fprintf(stderr, "%lu - number of threads: %u\n",
                     time(NULL), num_threads);
 #endif
@@ -1471,21 +1471,21 @@ int main(int argc, char *argv[]) {
             switch (*optarg) {
                 case 'r':
                     mode = 'r';
-#ifdef DEBUG
+#ifdef LOG_INFO
                     fprintf(stderr, "%lu - mode: round-robin distribution\n",
                             time(NULL));
 #endif
                 break;
                 case 'd':
                     mode = 'd';
-#ifdef DEBUG
+#ifdef LOG_INFO
                     fprintf(stderr, "%lu - mode: duplicate\n",
                             time(NULL));
 #endif
                 break;
                 default:
                     mode = 255;
-#ifdef DEBUG
+#ifdef LOG_INFO
                     fprintf(stderr, "%lu - invalid mode 0x%x\n",
                             time(NULL), mode);
 #endif
@@ -1495,14 +1495,14 @@ int main(int argc, char *argv[]) {
         break;
         case 'i':
             threshold = strtoul(optarg, NULL, 10);
-#ifdef DEBUG
-            fprintf(stderr, "%lu - load balance every: %lu lines\n",
+#ifdef LOG_INFO
+            fprintf(stderr, "%lu - load balance every: %lu bytes\n",
                     time(NULL), threshold);
 #endif
         break;
         case 't':
             reorder_threshold = atof(optarg);
-#ifdef DEBUG
+#ifdef LOG_INFO
             fprintf(stderr, "%lu - load balance inter-target threshold: %.2f\n",
                     time(NULL), reorder_threshold);
 #endif
@@ -1521,7 +1521,7 @@ int main(int argc, char *argv[]) {
     signal(SIGINT, sig_handler_shutdown);
     signal(SIGUSR2, sig_handler_ignore);
 
-#ifdef DEBUG
+#ifdef LOG_INFO
     fprintf(stderr, "%lu - setting up listener socket...\n",
             time(NULL));
 #endif
