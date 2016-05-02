@@ -204,6 +204,7 @@ struct s_hashable* ht_get_add(struct s_hashable **ht, uint64_t key,
             return NULL;
         }
         ht_e->key = key;
+        ht_e->source = source;
         ht_e->target = target;
         smp_mb__before_atomic();
         atomic_set(&(ht_e->itemcnt), itemcnt);
