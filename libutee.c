@@ -130,21 +130,6 @@ uint64_t create_key_from_addr(struct sockaddr_storage* addr) {
     }
 }
 
-// TODO: this is not IPv6 safe
-// TODO: this method is deprecated
-void get_addr_from_key(uint64_t key, struct sockaddr_storage* addr, short af_family) {
-    if (af_family == AF_INET) {
-        ((struct sockaddr_in*)addr)->sin_family = AF_INET;
-        ((struct sockaddr_in*)addr)->sin_addr.s_addr = (uint32_t)(key >> 32);
-        ((struct sockaddr_in*)addr)->sin_port = (uint16_t)(key & 0xFFFF);
-        printf("addr: %u, port: %u\n", (uint32_t)(key >> 32), (uint16_t)(key & 0xFFFF));
-    }
-    else {
-        // TODO: this is not IPv6 safe
-    }
-
-}
-
 const char* get_ip(struct sockaddr_storage* addr, char* addrbuf) {
     return inet_ntop(addr->ss_family, get_in_addr(addr), addrbuf, INET6_ADDRSTRLEN);
 }
