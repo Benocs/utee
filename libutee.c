@@ -152,6 +152,8 @@ uint16_t get_port4_uint(uint16_t port) {
 void cp_sockaddr(struct sockaddr_storage* src, struct sockaddr_storage* dst) {
     uint8_t cnt;
 
+    //ht_e->source = *source;
+
     if (src->ss_family == AF_INET) {
         ((struct sockaddr_in *)dst)->sin_family = ((struct sockaddr_in *)src)->sin_family;
         ((struct sockaddr_in *)dst)->sin_port = ((struct sockaddr_in *)src)->sin_port;
@@ -1145,9 +1147,16 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
 
         // find target with smallest counter and target with largest counter
         target_min_idx = 0;
-        target_max_idx = 0;
 
-        for (cnt = 1; cnt < tds[0].num_targets; cnt++ ) {
+        // initialize target_max_idx with first target that has more than one sources
+        for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
+            if (ht_target_count(*master_hashtable, &(tds[0].targets[cnt])) > 1) {
+                target_max_idx = cnt;
+                break;
+            }
+        }
+
+        for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
             if (per_target_item_cnt[cnt] < per_target_item_cnt[target_min_idx])
                 target_min_idx = cnt;
             if (per_target_item_cnt[cnt] > per_target_item_cnt[target_max_idx] &&
