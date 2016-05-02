@@ -121,8 +121,8 @@ void setup_udp_header(struct udphdr *udph, uint16_t udp_payload_len,
 // TODO: this is not IPv6 safe
 uint64_t create_key_from_addr(struct sockaddr_storage* addr) {
     if (addr->ss_family == AF_INET) {
-        return (((uint64_t)(((struct sockaddr_in*)addr)->sin_addr.s_addr)) << 32) + \
-                ((struct sockaddr_in *)addr)->sin_port;
+        return (((uint64_t)ntohl(((struct sockaddr_in*)addr)->sin_addr.s_addr)) << 32) + \
+                ntohs(((struct sockaddr_in *)addr)->sin_port);
     }
     else {
         // TODO: this is not IPv6 safe
@@ -370,7 +370,7 @@ void ht_find_best(struct s_hashable *ht,
 #if defined(HASH_DEBUG) || defined(LOAD_BALANCE_DEBUG)
         tcnt += atomic_read(&(s->itemcnt));
 
-        fprintf(stderr, "%lu - ht_find_best: count: %lu\tkey: %lu\taddr: %s:%u, target: %s:%u\n",
+        fprintf(stderr, "%lu - ht_find_best: count: %lu\tkey: 0x%lx\taddr: %s:%u, target: %s:%u\n",
             time(NULL),
             atomic_read(&(s->itemcnt)),
             s->key,
