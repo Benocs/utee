@@ -149,6 +149,26 @@ uint16_t get_port4_uint(uint16_t port) {
     return ntohs(port);
 }
 
+void cp_sockaddr(struct sockaddr_storage* src, struct sockaddr_storage* dst) {
+    uint8_t cnt;
+
+    if (src->ss_family == AF_INET) {
+        ((struct sockaddr_in *)dst)->sin_family = ((struct sockaddr_in *)src)->sin_family;
+        ((struct sockaddr_in *)dst)->sin_port = ((struct sockaddr_in *)src)->sin_port;
+        ((struct sockaddr_in *)dst)->sin_addr = ((struct sockaddr_in *)src)->sin_addr;
+    }
+    else {
+        ((struct sockaddr_in6 *)dst)->sin6_family = ((struct sockaddr_in6 *)src)->sin6_family;
+        ((struct sockaddr_in6 *)dst)->sin6_port = ((struct sockaddr_in6 *)src)->sin6_port;
+        ((struct sockaddr_in6 *)dst)->sin6_flowinfo = ((struct sockaddr_in6 *)src)->sin6_flowinfo;
+        ((struct sockaddr_in6 *)dst)->sin6_scope_id = ((struct sockaddr_in6 *)src)->sin6_scope_id;
+
+        for (cnt=0; cnt<16; cnt++)
+        ((struct sockaddr_in6 *)dst)->sin6_addr.s6_addr[cnt] = \
+            ((struct sockaddr_in6 *)src)->sin6_addr.s6_addr[cnt];
+    }
+}
+
 struct s_target* hash_based_output(uint64_t key, struct s_thread_data* td) {
 
     uint32_t hashvalue = 0;
@@ -204,7 +224,7 @@ struct s_hashable* ht_get_add(struct s_hashable **ht, uint64_t key,
             return NULL;
         }
         ht_e->key = key;
-        ht_e->source = source;
+        cp_sockaddr(source, &(ht_e->source));
         ht_e->target = target;
         smp_mb__before_atomic();
         atomic_set(&(ht_e->itemcnt), itemcnt);

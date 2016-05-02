@@ -171,6 +171,8 @@ uint16_t get_port(struct sockaddr_storage* addr);
 const char* get_ip4_uint(uint32_t addr, char* addrbuf);
 uint16_t get_port4_uint(uint16_t port);
 
+void cp_sockaddr(struct sockaddr_storage* src, struct sockaddr_storage* dst);
+
 struct s_target* hash_based_output(uint64_t key, struct s_thread_data* td);
 
 struct s_hashable* ht_get(struct s_hashable **ht, uint64_t key);
