@@ -176,8 +176,6 @@ struct s_target* hash_based_output(uint64_t key, struct s_thread_data* td) {
     uint32_t hashvalue = 0;
     uint32_t target = 0;
 
-    // TODO: this is not IPv6 safe
-
     // (key, keylen, num_bkts, hashv, bkt)
     HASH_ADDR(
             &key,
@@ -186,6 +184,11 @@ struct s_target* hash_based_output(uint64_t key, struct s_thread_data* td) {
             hashvalue,
             target
             );
+
+#if defined(HASH_DEBUG) && defined(DEBUG_VERBOSE)
+    fprintf(stderr, "%lu - hash_based_output: key: %lx\ttarget: %u\n",
+        time(NULL), key, target);
+#endif
 
     return (struct s_target*)&(td->targets[target]);
 }
@@ -234,6 +237,7 @@ struct s_hashable* ht_get_add(struct s_hashable **ht, uint64_t key,
         HASH_ADD_INT(*ht, key, ht_e);
     }
     else if (overwrite) {
+        //ht_e->key = key;
         ht_e->target = target;
         smp_mb__before_atomic();
         if (sum_itemcnt) {
