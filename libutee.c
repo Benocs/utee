@@ -181,20 +181,7 @@ struct s_hashable* ht_get_add(struct s_hashable **ht, uint64_t key,
     HASH_FIND_INT(*ht, &key, ht_e);
     if (ht_e == NULL) {
 #if defined(HASH_DEBUG)
-        /*
-        fprintf(stderr, "%lu - ht: key: %s:%u not found. adding output: %s:%u\n",
-            time(NULL),
-            inet_ntop(AF_INET,
-                get_in_addr((struct sockaddr *)source),
-                addrbuf0, sizeof(addrbuf0)),
-            ntohs(((struct sockaddr_in *)source)->sin_port),
-            inet_ntop(AF_INET,
-                get_in_addr((struct sockaddr *)&(target->dest)),
-                addrbuf1, sizeof(addrbuf1)),
-            ntohs(((struct sockaddr_in *)&(target->dest))->sin_port));
-        */
-
-        fprintf(stderr, "%lu - ht: key: %s:%u not found. adding output: %s:%u\n",
+        fprintf(stderr, "%lu - ht: addr: %s:%u not found. adding output: %s:%u\n",
             time(NULL),
             get_ip(source, addrbuf0),
             get_port(source),
