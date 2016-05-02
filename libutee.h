@@ -146,7 +146,7 @@ struct s_thread_data {
 unsigned short checksum (unsigned short *buf, int nwords);
 
 // get sockaddr, IPv4 or IPv6:
-void *get_in_addr(struct sockaddr *sa);
+void *get_in_addr(struct sockaddr_storage *sa);
 
 // TODO: this is not IPv6 safe
 void update_ip_header(struct iphdr *iph, uint16_t ip_payload_len,
@@ -165,8 +165,8 @@ void setup_udp_header(struct udphdr *udph, uint16_t udp_payload_len,
 // TODO: this is not IPv6 safe
 uint64_t create_key_from_addr(struct sockaddr_storage* addr);
 
-// TODO: this is not IPv6 safe
-void get_addr_from_key(uint64_t key, struct sockaddr_storage* addr, short af_family);
+const char* get_ip(struct sockaddr_storage* addr, char* addrbuf);
+uint16_t get_port(struct sockaddr_storage* addr);
 
 struct s_target* hash_based_output(uint64_t key, struct s_thread_data* td);
 

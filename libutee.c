@@ -73,8 +73,8 @@ unsigned short checksum (unsigned short *buf, int nwords) {
 }
 
 // get sockaddr, IPv4 or IPv6:
-void *get_in_addr(struct sockaddr *sa) {
-    if (sa->sa_family == AF_INET) {
+void *get_in_addr(struct sockaddr_storage *sa) {
+    if (sa->ss_family == AF_INET) {
         return &(((struct sockaddr_in*)sa)->sin_addr);
     }
 
@@ -131,6 +131,7 @@ uint64_t create_key_from_addr(struct sockaddr_storage* addr) {
 }
 
 // TODO: this is not IPv6 safe
+// TODO: this method is deprecated
 void get_addr_from_key(uint64_t key, struct sockaddr_storage* addr, short af_family) {
     if (af_family == AF_INET) {
         ((struct sockaddr_in*)addr)->sin_family = AF_INET;
@@ -142,6 +143,17 @@ void get_addr_from_key(uint64_t key, struct sockaddr_storage* addr, short af_fam
         // TODO: this is not IPv6 safe
     }
 
+}
+
+const char* get_ip(struct sockaddr_storage* addr, char* addrbuf) {
+    return inet_ntop(addr->ss_family, get_in_addr(addr), addrbuf, INET6_ADDRSTRLEN);
+}
+
+uint16_t get_port(struct sockaddr_storage* addr) {
+    if (addr->ss_family == AF_INET)
+        return ntohs(((struct sockaddr_in *)addr)->sin_port);
+    else
+        return ntohs(((struct sockaddr_in6 *)addr)->sin6_port);
 }
 
 struct s_target* hash_based_output(uint64_t key, struct s_thread_data* td) {
@@ -184,15 +196,27 @@ struct s_hashable* ht_get_add(struct s_hashable **ht, uint64_t key,
     HASH_FIND_INT(*ht, &key, ht_e);
     if (ht_e == NULL) {
 #if defined(HASH_DEBUG)
+        /*
         fprintf(stderr, "%lu - ht: key: %s:%u not found. adding output: %s:%u\n",
             time(NULL),
-            inet_ntop(AF_INET, (struct sockaddr_in *)&(source), addrbuf0,
-                sizeof(addrbuf0)),
-            ntohs(((struct sockaddr_in *)&(source))->sin_port),
+            inet_ntop(AF_INET,
+                get_in_addr((struct sockaddr *)source),
+                addrbuf0, sizeof(addrbuf0)),
+            ntohs(((struct sockaddr_in *)source)->sin_port),
             inet_ntop(AF_INET,
                 get_in_addr((struct sockaddr *)&(target->dest)),
                 addrbuf1, sizeof(addrbuf1)),
             ntohs(((struct sockaddr_in *)&(target->dest))->sin_port));
+        */
+
+        fprintf(stderr, "%lu - ht: key: %s:%u not found. adding output: %s:%u\n",
+            time(NULL),
+            get_ip(source, addrbuf0),
+            get_port(source),
+            get_ip(&(target->dest), addrbuf1),
+            get_port(&(target->dest)));
+
+
         added = 1;
 #endif
         if ((ht_e = (struct s_hashable*)malloc(sizeof(struct s_hashable))) == NULL) {
@@ -233,13 +257,10 @@ struct s_hashable* ht_get_add(struct s_hashable **ht, uint64_t key,
 #if defined(HASH_DEBUG)
         fprintf(stderr, "%lu - ht: addr: %s:%u found. overwriting. using new output: %s:%u\n",
             time(NULL),
-            inet_ntop(AF_INET, (struct sockaddr_in *)&(source), addrbuf0,
-                sizeof(addrbuf0)),
-            ntohs(((struct sockaddr_in *)&(source))->sin_port),
-            inet_ntop(AF_INET,
-                get_in_addr((struct sockaddr *)&(ht_e->target->dest)),
-                addrbuf1, sizeof(addrbuf1)),
-            ntohs(((struct sockaddr_in *)&(target->dest))->sin_port));
+            get_ip(source, addrbuf0),
+            get_port(source),
+            get_ip(&(ht_e->target->dest), addrbuf1),
+            get_port(&(ht_e->target->dest)));
 #endif
     }
 
@@ -247,14 +268,10 @@ struct s_hashable* ht_get_add(struct s_hashable **ht, uint64_t key,
     if (!added) {
         fprintf(stderr, "%lu - ht: addr: %s:%u found. not overwriting. using output: %s:%u\n",
             time(NULL),
-            inet_ntop(AF_INET,
-                get_in_addr((struct sockaddr *)&(source)), addrbuf0,
-                sizeof(addrbuf0)),
-            ((struct sockaddr_in *)&(source))->sin_port,
-            inet_ntop(AF_INET,
-                get_in_addr((struct sockaddr *)&(ht_e->target->dest)),
-                addrbuf1, sizeof(addrbuf1)),
-            ntohs(((struct sockaddr_in *)&(target->dest))->sin_port));
+            get_ip(source, addrbuf0),
+            get_port(source),
+            get_ip(&(ht_e->target->dest), addrbuf1),
+            get_port(&(ht_e->target->dest)));
     }
 #endif
     return ht_e;
@@ -270,14 +287,10 @@ void ht_iterate(struct s_hashable *ht) {
         fprintf(stderr, "%lu - ht_iter: count: %lu\taddr: %s:%u - target: %s:%u\n",
             time(NULL),
             atomic_read(&(s->itemcnt)),
-            inet_ntop(AF_INET,
-                get_in_addr((struct sockaddr *)&(s->source)),
-                addrbuf0, sizeof(addrbuf0)),
-            ntohs(((struct sockaddr_in *)&(s->source))->sin_port),
-            inet_ntop(AF_INET,
-                get_in_addr((struct sockaddr *)&(s->target->dest)),
-                addrbuf1, sizeof(addrbuf1)),
-            ntohs(((struct sockaddr_in *)&(s->target->dest))->sin_port));
+            get_ip(&(s->source), addrbuf0),
+            get_port(&(s->source)),
+            get_ip(&(s->target->dest), addrbuf1),
+            get_port(&(s->target->dest)));
     }
 }
 
@@ -303,14 +316,10 @@ void ht_find_max(struct s_hashable *ht,
         fprintf(stderr, "%lu - ht_iter: count: %lu\taddr: %s:%u, target: %s:%u\n",
             time(NULL),
             atomic_read(&(s->itemcnt)),
-            inet_ntop(AF_INET,
-                get_in_addr((struct sockaddr *)&(s->source)),
-                addrbuf0, sizeof(addrbuf0)),
-            ntohs(((struct sockaddr_in *)&(s->source))->sin_port),
-            inet_ntop(AF_INET,
-                get_in_addr((struct sockaddr *)&(s->target->dest)),
-                addrbuf1, sizeof(addrbuf1)),
-            ntohs(((struct sockaddr_in *)&(s->target->dest))->sin_port));
+            get_ip(&(s->source), addrbuf0),
+            get_port(&(s->source)),
+            get_ip(&(s->target->dest), addrbuf1),
+            get_port(&(s->target->dest)));
 #endif
     }
 
@@ -321,14 +330,10 @@ void ht_find_max(struct s_hashable *ht,
         fprintf(stderr, "%lu - ht_iter: max: count: %lu\taddr: %s:%u, target: %s:%u\n",
             time(NULL),
             atomic_read(&(t->itemcnt)),
-            inet_ntop(AF_INET,
-                get_in_addr((struct sockaddr *)&(t->source)),
-                addrbuf0, sizeof(addrbuf0)),
-            ntohs(((struct sockaddr_in *)&(t->source))->sin_port),
-            inet_ntop(AF_INET,
-                get_in_addr((struct sockaddr *)&(t->target->dest)),
-                addrbuf1, sizeof(addrbuf1)),
-            ntohs(((struct sockaddr_in *)&(t->target->dest))->sin_port));
+            get_ip(&(t->source), addrbuf0),
+            get_port(&(t->source)),
+            get_ip(&(t->target->dest), addrbuf1),
+            get_port(&(t->target->dest)));
 #endif
     }
 }
@@ -365,14 +370,10 @@ void ht_find_best(struct s_hashable *ht,
         fprintf(stderr, "%lu - ht_find_best: count: %lu\taddr: %s:%u, target: %s:%u\n",
             time(NULL),
             atomic_read(&(s->itemcnt)),
-            inet_ntop(AF_INET,
-                get_in_addr((struct sockaddr *)&(s->source)),
-                addrbuf0, sizeof(addrbuf0)),
-            ntohs(((struct sockaddr_in *)&(s->source))->sin_port),
-            inet_ntop(AF_INET,
-                get_in_addr((struct sockaddr *)&(s->target->dest)),
-                addrbuf1, sizeof(addrbuf1)),
-            ntohs(((struct sockaddr_in *)&(s->target->dest))->sin_port));
+            get_ip(&(s->source), addrbuf0),
+            get_port(&(s->source)),
+            get_ip(&(s->target->dest), addrbuf1),
+            get_port(&(s->target->dest)));
 #endif
         // do not ever over shoot
         if (atomic_read(&(s->itemcnt)) > excess_items)
@@ -394,14 +395,10 @@ void ht_find_best(struct s_hashable *ht,
         fprintf(stderr, "%lu - ht_find_best: best: count: %lu\taddr: %s:%u, target: %s:%u\n",
             time(NULL),
             atomic_read(&(t->itemcnt)),
-            inet_ntop(AF_INET,
-                get_in_addr((struct sockaddr *)&(t->source)),
-                addrbuf0, sizeof(addrbuf0)),
-            ntohs(((struct sockaddr_in *)&(t->source))->sin_port),
-            inet_ntop(AF_INET,
-                get_in_addr((struct sockaddr *)&(t->target->dest)),
-                addrbuf1, sizeof(addrbuf1)),
-            ntohs(((struct sockaddr_in *)&(t->target->dest))->sin_port));
+            get_ip(&(t->source), addrbuf0),
+            get_port(&(t->source)),
+            get_ip(&(t->target->dest), addrbuf1),
+            get_port(&(t->target->dest)));
 #endif
     }
 }
@@ -423,10 +420,8 @@ uint32_t ht_target_count(struct s_hashable *ht, struct s_target *target) {
 #if defined(HASH_DEBUG) || defined(LOAD_BALANCE_DEBUG)
     fprintf(stderr, "%lu - ht_target_count: target: %s:%u, count: %u\n",
         time(NULL),
-        inet_ntop(AF_INET,
-            get_in_addr((struct sockaddr *)&(target->dest)),
-            addrbuf0, sizeof(addrbuf0)),
-        ntohs(((struct sockaddr_in *)&(target->dest))->sin_port),
+        get_ip(&(target->dest), addrbuf0),
+        get_port(&(target->dest)),
         count);
 #endif
     return count;
@@ -606,10 +601,8 @@ void *demux(void *arg0) {
             fprintf(stderr, "%lu - listener %d: hash result for addr: target: %s:%u (count: %lu)\n",
                     time(NULL),
                     td->thread_id,
-                    inet_ntop(AF_INET,
-                        get_in_addr((struct sockaddr *)target_addr),
-                        addrbuf1, sizeof(addrbuf1)),
-                    ntohs(((struct sockaddr_in*)target_addr)->sin_port),
+                    get_ip((struct sockaddr_storage *)target_addr, addrbuf0),
+                    get_port((struct sockaddr_storage *)target_addr),
                     atomic_read(&(ht_e->itemcnt)));
 #endif
 
@@ -625,22 +618,16 @@ void *demux(void *arg0) {
         fprintf(stderr, "%lu - listener %d: got packet from %s:%d\n",
             time(NULL),
             td->thread_id,
-            inet_ntop(source_addr.ss_family,
-                get_in_addr((struct sockaddr *)&source_addr),
-                addrbuf0, sizeof(addrbuf0)),
-            ntohs(((struct sockaddr_in*)&source_addr)->sin_port));
+            get_ip(&source_addr, addrbuf0),
+            get_port(&source_addr));
         fprintf(stderr, "%lu - listener %d: packet is %d bytes long\n",
                 time(NULL), td->thread_id, numbytes);
         fprintf(stderr, "%lu - listener %d: sending packet: %s:%u => %s:%u: len: %u\n",
             time(NULL),
             td->thread_id,
-            inet_ntop(AF_INET,
-                (struct sockaddr_in *)&(iph->saddr),
-                addrbuf0, sizeof(addrbuf0)),
+            get_ip((struct sockaddr_storage *)&(iph->saddr), addrbuf0),
             ntohs(udph->source),
-            inet_ntop(AF_INET,
-                (struct sockaddr_in *)&(iph->daddr),
-                addrbuf1, sizeof(addrbuf1)),
+            get_ip((struct sockaddr_storage *)&(iph->daddr), addrbuf1),
             ntohs(udph->dest),
             iph->tot_len);
 #endif
@@ -691,13 +678,9 @@ void *demux(void *arg0) {
                     fprintf(stderr, "%lu - ERROR: listener %d: short write: sent packet: %s:%u => %s:%u: len: %u written: %d\n",
                         time(NULL),
                         td->thread_id,
-                        inet_ntop(AF_INET,
-                            (struct sockaddr_in *)&(iph->saddr),
-                            addrbuf0, sizeof(addrbuf0)),
+                        get_ip((struct sockaddr_storage*)&(iph->saddr), addrbuf0),
                         ntohs(udph->source),
-                        inet_ntop(AF_INET,
-                            (struct sockaddr_in *)&(iph->daddr),
-                            addrbuf1, sizeof(addrbuf1)),
+                        get_ip((struct sockaddr_storage*)&(iph->daddr), addrbuf1),
                         ntohs(udph->dest),
                         iph->tot_len, written);
 #endif
@@ -785,12 +768,11 @@ void *tee(void *arg0) {
         data[numbytes] = '\0';
 
 #ifdef DEBUG_SOCKETS
-        fprintf(stderr, "%lu - listener %d: got packet from %s\n",
+        fprintf(stderr, "%lu - listener %d: got packet from %s:%u\n",
             time(NULL),
             td->thread_id,
-            inet_ntop(source_addr.ss_family,
-                get_in_addr((struct sockaddr *)&source_addr),
-                addrbuf0, sizeof(addrbuf0)));
+            get_ip(&(source_addr), addrbuf0),
+            get_port(&(source_addr)));
         fprintf(stderr, "%lu - listener %d: packet is %d bytes long\n", time(NULL), td->thread_id, numbytes);
         fprintf(stderr, "%lu - listener %d: packet contains \"%s\"\n", time(NULL), td->thread_id, data);
         fprintf(stderr, "%lu - listener %d: crafting new packet...\n", time(NULL), td->thread_id);
@@ -810,13 +792,9 @@ void *tee(void *arg0) {
             fprintf(stderr, "%lu - listener %d: sending packet: %s:%u => %s:%u: len: %u\n",
                 time(NULL),
                 td->thread_id,
-                inet_ntop(AF_INET,
-                    (struct sockaddr_in *)&(iph->saddr),
-                    addrbuf0, sizeof(addrbuf0)),
+                get_ip((struct sockaddr_storage *)&(iph->saddr), addrbuf0),
                 ntohs(udph->source),
-                inet_ntop(AF_INET,
-                    (struct sockaddr_in *)&(iph->daddr),
-                    addrbuf1, sizeof(addrbuf1)),
+                get_ip((struct sockaddr_storage *)&(iph->daddr), addrbuf1),
                 ntohs(udph->dest),
                 iph->tot_len);
 #endif
@@ -849,13 +827,9 @@ void *tee(void *arg0) {
                         fprintf(stderr, "%lu - ERROR: listener %d: short write: sent packet: %s:%u => %s:%u: len: %u written: %d\n",
                             time(NULL),
                             td->thread_id,
-                            inet_ntop(AF_INET,
-                                (struct sockaddr_in *)&(iph->saddr),
-                                addrbuf0, sizeof(addrbuf0)),
+                            get_ip((struct sockaddr_storage *)&(iph->saddr), addrbuf0),
                             ntohs(udph->source),
-                            inet_ntop(AF_INET,
-                                (struct sockaddr_in *)&(iph->daddr),
-                                addrbuf1, sizeof(addrbuf1)),
+                            get_ip((struct sockaddr_storage *)&(iph->daddr), addrbuf1),
                             ntohs(udph->dest),
                             iph->tot_len, written);
 #endif
@@ -941,10 +915,8 @@ int prepare_sending_socket(struct sockaddr *addr, socklen_t len, uint32_t pipe_s
     char addrbuf[INET6_ADDRSTRLEN];
     fprintf(stderr, "%lu - connecting to target: %s:%d\n",
         time(NULL),
-        inet_ntop(AF_INET,
-            get_in_addr((struct sockaddr *)(addr)),
-            addrbuf, sizeof(addrbuf)),
-        ntohs(((struct sockaddr_in*)addr)->sin_port));
+        get_ip((struct sockaddr_storage *)addr, addrbuf),
+        get_port((struct sockaddr_storage *)addr));
 #endif
     if (connect(s, addr, len) == -1) {
         fprintf(stderr, "%lu - ERROR: connect(): %s\n",
@@ -996,10 +968,8 @@ void init_sending_sockets(struct s_target* targets,
 #ifdef LOG_INFO
         fprintf(stderr, "%lu - receiver: %s:%d :: fd: %d\n",
             time(NULL),
-            inet_ntop(AF_INET,
-                get_in_addr((struct sockaddr *)&(target->dest)),
-                addrbuf, sizeof(addrbuf)),
-            ntohs(((struct sockaddr_in*)&(target->dest))->sin_port),
+            get_ip((struct sockaddr_storage *)&(target->dest), addrbuf),
+            get_port((struct sockaddr_storage *)&(target->dest)),
             target->fd);
 #endif
     }
@@ -1205,15 +1175,11 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
         fprintf(stderr, "%lu - load_balance: out_min: %s:%u (%lu), "
                 "out_max: %s:%u (%lu)\n",
                 time(NULL),
-                inet_ntop(AF_INET,
-                    get_in_addr((struct sockaddr *)&(tds[0].targets[target_min_idx].dest)),
-                    addrbuf0, sizeof(addrbuf0)),
-                ntohs(((struct sockaddr_in *)&(tds[0].targets[target_min_idx].dest))->sin_port),
+                get_ip((struct sockaddr_storage *)&(tds[0].targets[target_min_idx].dest), addrbuf0),
+                get_port((struct sockaddr_storage *)&(tds[0].targets[target_min_idx].dest)),
                 per_target_item_cnt[target_min_idx],
-                inet_ntop(AF_INET,
-                    get_in_addr((struct sockaddr *)&(tds[0].targets[target_max_idx].dest)),
-                    addrbuf1, sizeof(addrbuf1)),
-                ntohs(((struct sockaddr_in *)&(tds[0].targets[target_max_idx].dest))->sin_port),
+                get_ip((struct sockaddr_storage *)&(tds[0].targets[target_max_idx].dest), addrbuf1),
+                get_port((struct sockaddr_storage *)&(tds[0].targets[target_max_idx].dest)),
                 per_target_item_cnt[target_max_idx]
                 );
 #endif
@@ -1244,23 +1210,17 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
 
         fprintf(stderr, "%lu - moving high hitter: %s:%u from: %s:%u (%p) to %s:%u (%p) (count: %lu)\n",
             time(NULL),
-            inet_ntop(AF_INET,
-                get_in_addr((struct sockaddr *)&(ht_e_best->source)),
-                addrbuf0, sizeof(addrbuf0)),
-            ntohs(((struct sockaddr_in *)&(ht_e_best->source))->sin_port),
+            get_ip(&(ht_e_best->source), addrbuf0),
+            get_port(&(ht_e_best->source)),
 
             // from:
-            inet_ntop(AF_INET,
-                get_in_addr((struct sockaddr *)&(ht_e_best->target->dest)),
-                addrbuf1, sizeof(addrbuf1)),
-            ntohs(((struct sockaddr_in *)&(ht_e_best->target->dest))->sin_port),
+            get_ip(&(ht_e_best->target->dest), addrbuf1),
+            get_port(&(ht_e_best->target->dest)),
             ht_e_best->target,
 
             // to:
-            inet_ntop(AF_INET,
-                get_in_addr((struct sockaddr *)&(tds[0].targets[target_min_idx].dest)),
-                addrbuf2, sizeof(addrbuf2)),
-            ntohs(((struct sockaddr_in *)&(tds[0].targets[target_min_idx].dest))->sin_port),
+            get_ip(&(tds[0].targets[target_min_idx].dest), addrbuf2),
+            get_port(&(tds[0].targets[target_min_idx].dest)),
             &(tds[0].targets[target_min_idx]),
 
             atomic_read(&(ht_e_best->itemcnt)));
