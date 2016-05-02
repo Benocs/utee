@@ -141,6 +141,14 @@ uint16_t get_port(struct sockaddr_storage* addr) {
         return ntohs(((struct sockaddr_in6 *)addr)->sin6_port);
 }
 
+const char* get_ip4_uint(uint32_t addr, char* addrbuf) {
+    return inet_ntop(AF_INET, &addr, addrbuf, INET_ADDRSTRLEN);
+}
+
+uint16_t get_port4_uint(uint16_t port) {
+    return ntohs(port);
+}
+
 struct s_target* hash_based_output(uint64_t key, struct s_thread_data* td) {
 
     uint32_t hashvalue = 0;
@@ -597,10 +605,10 @@ void *demux(void *arg0) {
         fprintf(stderr, "%lu - listener %d: sending packet: %s:%u => %s:%u: len: %u\n",
             time(NULL),
             td->thread_id,
-            get_ip((struct sockaddr_storage *)&(iph->saddr), addrbuf0),
-            ntohs(udph->source),
-            get_ip((struct sockaddr_storage *)&(iph->daddr), addrbuf1),
-            ntohs(udph->dest),
+            get_ip4_uint(iph->saddr, addrbuf0),
+            get_port4_uint(udph->source),
+            get_ip4_uint(iph->daddr, addrbuf1),
+            get_port4_uint(udph->dest),
             iph->tot_len);
 #endif
 
@@ -650,10 +658,10 @@ void *demux(void *arg0) {
                     fprintf(stderr, "%lu - ERROR: listener %d: short write: sent packet: %s:%u => %s:%u: len: %u written: %d\n",
                         time(NULL),
                         td->thread_id,
-                        get_ip((struct sockaddr_storage*)&(iph->saddr), addrbuf0),
-                        ntohs(udph->source),
-                        get_ip((struct sockaddr_storage*)&(iph->daddr), addrbuf1),
-                        ntohs(udph->dest),
+                        get_ip4_uint(iph->saddr, addrbuf0),
+                        get_port4_uint(udph->source),
+                        get_ip4_uint(iph->daddr, addrbuf1),
+                        get_port4_uint(udph->dest),
                         iph->tot_len, written);
 #endif
                 }
@@ -764,10 +772,10 @@ void *tee(void *arg0) {
             fprintf(stderr, "%lu - listener %d: sending packet: %s:%u => %s:%u: len: %u\n",
                 time(NULL),
                 td->thread_id,
-                get_ip((struct sockaddr_storage *)&(iph->saddr), addrbuf0),
-                ntohs(udph->source),
-                get_ip((struct sockaddr_storage *)&(iph->daddr), addrbuf1),
-                ntohs(udph->dest),
+                get_ip4_uint(iph->saddr, addrbuf0),
+                get_port4_uint(udph->source),
+                get_ip4_uint(iph->daddr, addrbuf1),
+                get_port4_uint(udph->dest),
                 iph->tot_len);
 #endif
 
@@ -799,10 +807,10 @@ void *tee(void *arg0) {
                         fprintf(stderr, "%lu - ERROR: listener %d: short write: sent packet: %s:%u => %s:%u: len: %u written: %d\n",
                             time(NULL),
                             td->thread_id,
-                            get_ip((struct sockaddr_storage *)&(iph->saddr), addrbuf0),
-                            ntohs(udph->source),
-                            get_ip((struct sockaddr_storage *)&(iph->daddr), addrbuf1),
-                            ntohs(udph->dest),
+                            get_ip4_uint(iph->saddr, addrbuf0),
+                            get_port4_uint(udph->source),
+                            get_ip4_uint(iph->daddr, addrbuf1),
+                            get_port4_uint(udph->dest),
                             iph->tot_len, written);
 #endif
                     }
