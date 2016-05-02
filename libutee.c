@@ -370,9 +370,10 @@ void ht_find_best(struct s_hashable *ht,
 #if defined(HASH_DEBUG) || defined(LOAD_BALANCE_DEBUG)
         tcnt += atomic_read(&(s->itemcnt));
 
-        fprintf(stderr, "%lu - ht_find_best: count: %lu\taddr: %s:%u, target: %s:%u\n",
+        fprintf(stderr, "%lu - ht_find_best: count: %lu\tkey: %lu\taddr: %s:%u, target: %s:%u\n",
             time(NULL),
             atomic_read(&(s->itemcnt)),
+            s->key,
             get_ip(&(s->source), addrbuf0),
             get_port(&(s->source)),
             get_ip(&(s->target->dest), addrbuf1),
