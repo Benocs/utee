@@ -120,7 +120,6 @@ void setup_udp_header(struct udphdr *udph, uint16_t udp_payload_len,
 
 // TODO: this is not IPv6 safe
 uint64_t create_key_from_addr(struct sockaddr_storage* addr) {
-    uint64_t key = 0;
     if (addr->ss_family == AF_INET) {
         return (((uint64_t)(((struct sockaddr_in*)addr)->sin_addr.s_addr)) << 32) + \
                 ((struct sockaddr_in *)addr)->sin_port;
@@ -174,15 +173,13 @@ struct s_hashable* ht_get(struct s_hashable **ht, uint64_t key) {
 
 struct s_hashable* ht_get_add(struct s_hashable **ht, uint64_t key,
         struct sockaddr_storage* source, struct s_target* target,
-        uint64_t packetcnt, uint8_t overwrite, uint8_t sum_packetcnt) {
+        uint64_t itemcnt, uint8_t overwrite, uint8_t sum_itemcnt) {
     struct s_hashable *ht_e;
 #if defined(HASH_DEBUG)
     char addrbuf0[INET6_ADDRSTRLEN];
     char addrbuf1[INET6_ADDRSTRLEN];
     uint8_t added = 0;
 #endif
-
-    // TODO: addr_port change
 
     HASH_FIND_INT(*ht, &key, ht_e);
     if (ht_e == NULL) {
@@ -205,31 +202,31 @@ struct s_hashable* ht_get_add(struct s_hashable **ht, uint64_t key,
         ht_e->key = key;
         ht_e->target = target;
         smp_mb__before_atomic();
-        atomic_set(&(ht_e->packetcnt), packetcnt);
+        atomic_set(&(ht_e->itemcnt), itemcnt);
         smp_mb__after_atomic();
         HASH_ADD_INT(*ht, key, ht_e);
     }
     else if (overwrite) {
         ht_e->target = target;
         smp_mb__before_atomic();
-        if (sum_packetcnt) {
+        if (sum_itemcnt) {
 #if defined(HASH_DEBUG)
-            fprintf(stderr, "%lu - ht: summing packetcnt. %lu + %lu = ",
+            fprintf(stderr, "%lu - ht: summing itemcnt. %lu + %lu = ",
                     time(NULL),
-                    atomic_read(&(ht_e->packetcnt)), packetcnt);
+                    atomic_read(&(ht_e->itemcnt)), itemcnt);
 #endif
-            atomic_add(packetcnt, &(ht_e->packetcnt));
+            atomic_add(itemcnt, &(ht_e->itemcnt));
 #if defined(HASH_DEBUG)
-            fprintf(stderr, "%lu\n", atomic_read(&(ht_e->packetcnt)));
+            fprintf(stderr, "%lu\n", atomic_read(&(ht_e->itemcnt)));
 #endif
         }
         else {
 #if defined(HASH_DEBUG)
-            fprintf(stderr, "%lu - ht: overwriting packetcnt. old: %lu  new: %lu\n",
+            fprintf(stderr, "%lu - ht: overwriting itemcnt. old: %lu  new: %lu\n",
                     time(NULL),
-                    atomic_read(&(ht_e->packetcnt)), packetcnt);
+                    atomic_read(&(ht_e->itemcnt)), itemcnt);
 #endif
-            atomic_set(&(ht_e->packetcnt), packetcnt);
+            atomic_set(&(ht_e->itemcnt), itemcnt);
         }
         smp_mb__after_atomic();
 
@@ -250,9 +247,10 @@ struct s_hashable* ht_get_add(struct s_hashable **ht, uint64_t key,
     if (!added) {
         fprintf(stderr, "%lu - ht: addr: %s:%u found. not overwriting. using output: %s:%u\n",
             time(NULL),
-            inet_ntop(AF_INET, (struct sockaddr_in *)&(source), addrbuf0,
+            inet_ntop(AF_INET,
+                get_in_addr((struct sockaddr *)&(source)), addrbuf0,
                 sizeof(addrbuf0)),
-            ntohs(((struct sockaddr_in *)&(source))->sin_port),
+            ((struct sockaddr_in *)&(source))->sin_port,
             inet_ntop(AF_INET,
                 get_in_addr((struct sockaddr *)&(ht_e->target->dest)),
                 addrbuf1, sizeof(addrbuf1)),
@@ -269,18 +267,17 @@ void ht_iterate(struct s_hashable *ht) {
 
     smp_mb__before_atomic();
     for(s=ht; s != NULL; s=s->hh.next) {
-        /* TODO
-        fprintf(stderr, "%lu - ht_iter: count: %lu\taddr: %s / %u - target: %s:%u\n",
+        fprintf(stderr, "%lu - ht_iter: count: %lu\taddr: %s:%u - target: %s:%u\n",
             time(NULL),
-            atomic_read(&(s->packetcnt)),
-            inet_ntop(AF_INET, (struct sockaddr_in *)&(s->addr), addrbuf0,
-                sizeof(addrbuf0)),
-            ntohl(s->addr),
+            atomic_read(&(s->itemcnt)),
+            inet_ntop(AF_INET,
+                get_in_addr((struct sockaddr *)&(s->source)),
+                addrbuf0, sizeof(addrbuf0)),
+            ntohs(((struct sockaddr_in *)&(s->source))->sin_port),
             inet_ntop(AF_INET,
                 get_in_addr((struct sockaddr *)&(s->target->dest)),
                 addrbuf1, sizeof(addrbuf1)),
             ntohs(((struct sockaddr_in *)&(s->target->dest))->sin_port));
-        */
     }
 }
 
@@ -298,16 +295,17 @@ void ht_find_max(struct s_hashable *ht,
 
     smp_mb__before_atomic();
     for(s=ht; s != NULL; s=s->hh.next) {
-        if (s->target == target && t && atomic_read(&(s->packetcnt)) > atomic_read(&(t->packetcnt))) {
+        if (s->target == target && t && atomic_read(&(s->itemcnt)) > atomic_read(&(t->itemcnt))) {
             t = s;
         }
 
 #if defined(HASH_DEBUG) || defined(LOAD_BALANCE_DEBUG)
         fprintf(stderr, "%lu - ht_iter: count: %lu\taddr: %s:%u, target: %s:%u\n",
             time(NULL),
-            atomic_read(&(s->packetcnt)),
-            inet_ntop(AF_INET, (struct sockaddr_in *)&(s->source), addrbuf0,
-                sizeof(addrbuf0)),
+            atomic_read(&(s->itemcnt)),
+            inet_ntop(AF_INET,
+                get_in_addr((struct sockaddr *)&(s->source)),
+                addrbuf0, sizeof(addrbuf0)),
             ntohs(((struct sockaddr_in *)&(s->source))->sin_port),
             inet_ntop(AF_INET,
                 get_in_addr((struct sockaddr *)&(s->target->dest)),
@@ -322,9 +320,10 @@ void ht_find_max(struct s_hashable *ht,
 #if defined(HASH_DEBUG) || defined(LOAD_BALANCE_DEBUG)
         fprintf(stderr, "%lu - ht_iter: max: count: %lu\taddr: %s:%u, target: %s:%u\n",
             time(NULL),
-            atomic_read(&(t->packetcnt)),
-            inet_ntop(AF_INET, (struct sockaddr_in *)&(t->source), addrbuf0,
-                sizeof(addrbuf0)),
+            atomic_read(&(t->itemcnt)),
+            inet_ntop(AF_INET,
+                get_in_addr((struct sockaddr *)&(t->source)),
+                addrbuf0, sizeof(addrbuf0)),
             ntohs(((struct sockaddr_in *)&(t->source))->sin_port),
             inet_ntop(AF_INET,
                 get_in_addr((struct sockaddr *)&(t->target->dest)),
@@ -336,13 +335,13 @@ void ht_find_max(struct s_hashable *ht,
 
 void ht_find_best(struct s_hashable *ht,
         struct s_target *target,
-        uint64_t excess_packets,
+        uint64_t excess_items,
         struct s_hashable **ht_e_best) {
 
     struct s_hashable *s;
     struct s_hashable *t = *ht_e_best;
 
-    uint64_t abs_current = excess_packets;
+    uint64_t abs_current = excess_items;
     uint64_t abs_candidate;
 
 #if defined(HASH_DEBUG) || defined(LOAD_BALANCE_DEBUG)
@@ -351,7 +350,7 @@ void ht_find_best(struct s_hashable *ht,
 
     uint64_t tcnt = 0;
 
-    fprintf(stderr, "%lu - ht_find_best: excess_packets: %lu\n", time(NULL), excess_packets);
+    fprintf(stderr, "%lu - ht_find_best: excess_items: %lu\n", time(NULL), excess_items);
 #endif
 
     smp_mb__before_atomic();
@@ -361,13 +360,14 @@ void ht_find_best(struct s_hashable *ht,
             continue;
 
 #if defined(HASH_DEBUG) || defined(LOAD_BALANCE_DEBUG)
-        tcnt += atomic_read(&(s->packetcnt));
+        tcnt += atomic_read(&(s->itemcnt));
 
         fprintf(stderr, "%lu - ht_find_best: count: %lu\taddr: %s:%u, target: %s:%u\n",
             time(NULL),
-            atomic_read(&(s->packetcnt)),
-            inet_ntop(AF_INET, (struct sockaddr_in *)&(s->source), addrbuf0,
-                sizeof(addrbuf0)),
+            atomic_read(&(s->itemcnt)),
+            inet_ntop(AF_INET,
+                get_in_addr((struct sockaddr *)&(s->source)),
+                addrbuf0, sizeof(addrbuf0)),
             ntohs(((struct sockaddr_in *)&(s->source))->sin_port),
             inet_ntop(AF_INET,
                 get_in_addr((struct sockaddr *)&(s->target->dest)),
@@ -375,10 +375,10 @@ void ht_find_best(struct s_hashable *ht,
             ntohs(((struct sockaddr_in *)&(s->target->dest))->sin_port));
 #endif
         // do not ever over shoot
-        if (atomic_read(&(s->packetcnt)) > excess_packets)
+        if (atomic_read(&(s->itemcnt)) > excess_items)
             continue;
 
-        abs_candidate = excess_packets - atomic_read(&(s->packetcnt));
+        abs_candidate = excess_items - atomic_read(&(s->itemcnt));
 
         if (abs_candidate < abs_current) {
             abs_current = abs_candidate;
@@ -390,12 +390,13 @@ void ht_find_best(struct s_hashable *ht,
     if (t != NULL) {
         *ht_e_best = t;
 #if defined(HASH_DEBUG) || defined(LOAD_BALANCE_DEBUG)
-        fprintf(stderr, "%lu - ht_find_best: tot target pkts: %lu\n", time(NULL), tcnt);
+        fprintf(stderr, "%lu - ht_find_best: tot target items: %lu\n", time(NULL), tcnt);
         fprintf(stderr, "%lu - ht_find_best: best: count: %lu\taddr: %s:%u, target: %s:%u\n",
             time(NULL),
-            atomic_read(&(t->packetcnt)),
-            inet_ntop(AF_INET, (struct sockaddr_in *)&(t->source), addrbuf0,
-                sizeof(addrbuf0)),
+            atomic_read(&(t->itemcnt)),
+            inet_ntop(AF_INET,
+                get_in_addr((struct sockaddr *)&(t->source)),
+                addrbuf0, sizeof(addrbuf0)),
             ntohs(((struct sockaddr_in *)&(t->source))->sin_port),
             inet_ntop(AF_INET,
                 get_in_addr((struct sockaddr *)&(t->target->dest)),
@@ -440,7 +441,7 @@ void ht_copy(struct s_hashable *ht_from, struct s_hashable **ht_to) {
                 s->key,
                 &(s->source),
                 s->target,
-                atomic_read(&(s->packetcnt)),
+                atomic_read(&(s->itemcnt)),
                 1,
                 0);
     }
@@ -452,8 +453,8 @@ void ht_reset_counters(struct s_hashable *ht) {
 
     smp_mb__before_atomic();
     for(s=ht; s != NULL; s=s->hh.next) {
-        atomic_set(&(s->packetcnt), 0);
-        atomic_set(&(s->target->packetcnt), 0);
+        atomic_set(&(s->itemcnt), 0);
+        atomic_set(&(s->target->itemcnt), 0);
     }
     smp_mb__after_atomic();
 }
@@ -562,7 +563,7 @@ void *demux(void *arg0) {
         }
 #endif
         if ((numbytes = recvfrom(td->sockfd, data, BUFLEN-sizeof(struct iphdr)-sizeof(struct udphdr), 0,
-            (struct sockaddr *)&source_addr, &addr_len)) == -1) {
+                (struct sockaddr *)&source_addr, &addr_len)) == -1) {
             perror("recvfrom");
             continue;
         }
@@ -609,7 +610,7 @@ void *demux(void *arg0) {
                         get_in_addr((struct sockaddr *)target_addr),
                         addrbuf1, sizeof(addrbuf1)),
                     ntohs(((struct sockaddr_in*)target_addr)->sin_port),
-                    atomic_read(&(ht_e->packetcnt)));
+                    atomic_read(&(ht_e->itemcnt)));
 #endif
 
         update_udp_header(udph, numbytes,
@@ -669,10 +670,18 @@ void *demux(void *arg0) {
                     // NOTE: need atomic_inc for target-cnt as it is shared between all threads
 
                     smp_mb__before_atomic();
-                    // update per source bytecnt
-                    atomic_add(written, &(ht_e->packetcnt));
-                    // update per target bytetcnt
-                    atomic_add(written, &(target->packetcnt));
+                    if (features->lb_bytecnt_based) {
+                        // update per source bytecnt
+                        atomic_add(written, &(ht_e->itemcnt));
+                        // update per target bytetcnt
+                        atomic_add(written, &(target->itemcnt));
+                    }
+                    else {
+                        // update per source packetcnt
+                        atomic_inc(&(ht_e->itemcnt));
+                        // update per target packetcnt
+                        atomic_inc(&(target->itemcnt));
+                    }
                     smp_mb__after_atomic();
                 }
 
@@ -760,7 +769,7 @@ void *tee(void *arg0) {
         }
 #endif
         if ((numbytes = recvfrom(td->sockfd, data, BUFLEN-sizeof(struct iphdr)-sizeof(struct udphdr), 0,
-            (struct sockaddr *)&source_addr, &addr_len)) == -1) {
+                (struct sockaddr *)&source_addr, &addr_len)) == -1) {
             perror("recvfrom");
             continue;
         }
@@ -776,8 +785,6 @@ void *tee(void *arg0) {
         data[numbytes] = '\0';
 
 #ifdef DEBUG_SOCKETS
-        char addrbuf0[INET6_ADDRSTRLEN];
-        char addrbuf1[INET6_ADDRSTRLEN];
         fprintf(stderr, "%lu - listener %d: got packet from %s\n",
             time(NULL),
             td->thread_id,
@@ -1051,13 +1058,13 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
 
     // create a copy of current counters
     // this allows for the modification independent of ongoing forwarding of packets
-    uint64_t per_target_pkt_cnt[MAXTHREADS];
+    uint64_t per_target_item_cnt[MAXTHREADS];
 
     uint16_t target_min_idx;
     uint16_t target_max_idx;
 
     uint64_t tot_cnt = 0;
-    uint64_t excess_packets;
+    uint64_t excess_items;
 
     double ideal_avg = (1 / (double)tds[0].num_targets);
     double target_avg;
@@ -1083,11 +1090,11 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
     // this allows for the modification independent of ongoing forwarding of packets
     smp_mb__before_atomic();
     for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
-        per_target_pkt_cnt[cnt] = atomic_read(&(tds[0].targets[cnt].packetcnt));
-        tot_cnt += per_target_pkt_cnt[cnt];
+        per_target_item_cnt[cnt] = atomic_read(&(tds[0].targets[cnt].itemcnt));
+        tot_cnt += per_target_item_cnt[cnt];
     }
 
-    // early abort if no packets were forwarded in last iteration
+    // early abort if no items were forwarded in last iteration
     if (!tot_cnt)
         return;
 
@@ -1120,10 +1127,10 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
 #endif
         smp_mb__before_atomic();
         for(s=tds[cnt].hashtable; s != NULL; s=s->hh.next) {
-            // only copy ht_e if it has seen any packets within the last iteration
-            if (atomic_read(&(s->packetcnt))) {
+            // only copy ht_e if it has seen any items within the last iteration
+            if (atomic_read(&(s->itemcnt))) {
                 ht_get_add(master_hashtable, s->key, &(s->source), s->target,
-                        atomic_read(&(s->packetcnt)), 1, 1);
+                        atomic_read(&(s->itemcnt)), 1, 1);
             }
         }
     }
@@ -1134,11 +1141,11 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
 #endif
 
     for(s=*master_hashtable; s != NULL; s=s->hh.next) {
-        global_total_cnt += atomic_read(&(s->packetcnt));
+        global_total_cnt += atomic_read(&(s->itemcnt));
     }
 
 #if defined(LOG_INFO)
-    // only print stats if there were any forwarded packets since last optimization iteration
+    // only print stats if there were any forwarded items since last optimization iteration
     if (tot_cnt) {
         fprintf(stderr, "%lu - lb cnt stats. ideal=%.4f thresh=[%.4f, %.4f] "
                 "tot=%lu\nrelative counts:\n\t",
@@ -1148,13 +1155,13 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
                 ideal_avg + (ideal_avg * (double) reorder_threshold),
                 global_total_cnt);
         for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
-            fprintf(stderr, "%2u=%.4f ", cnt, per_target_pkt_cnt[cnt] / (double)tot_cnt);
+            fprintf(stderr, "%2u=%.4f ", cnt, per_target_item_cnt[cnt] / (double)tot_cnt);
             if (cnt && (cnt+1) % 8 == 0)
                 fprintf(stderr, "\n\t");
         }
         fprintf(stderr, "\nabsolute counts:\n\t");
         for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
-            fprintf(stderr, "%2u=%lu ", cnt, per_target_pkt_cnt[cnt]);
+            fprintf(stderr, "%2u=%lu ", cnt, per_target_item_cnt[cnt]);
             if (cnt && (cnt+1) % 8 == 0)
                 fprintf(stderr, "\n\t");
         }
@@ -1170,14 +1177,14 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
         target_max_idx = 0;
 
         for (cnt = 1; cnt < tds[0].num_targets; cnt++ ) {
-            if (per_target_pkt_cnt[cnt] < per_target_pkt_cnt[target_min_idx])
+            if (per_target_item_cnt[cnt] < per_target_item_cnt[target_min_idx])
                 target_min_idx = cnt;
-            if (per_target_pkt_cnt[cnt] > per_target_pkt_cnt[target_max_idx] &&
+            if (per_target_item_cnt[cnt] > per_target_item_cnt[target_max_idx] &&
                     ht_target_count(*master_hashtable, &(tds[0].targets[cnt])) > 1)
                 target_max_idx = cnt;
         }
 
-        target_avg = per_target_pkt_cnt[target_min_idx] / (double)tot_cnt;
+        target_avg = per_target_item_cnt[target_min_idx] / (double)tot_cnt;
         if (((target_avg / ideal_avg) < 1) && (1 - (target_avg / ideal_avg) > reorder_threshold))
             hit_reordering_threshold = 1;
         else
@@ -1202,29 +1209,29 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
                     get_in_addr((struct sockaddr *)&(tds[0].targets[target_min_idx].dest)),
                     addrbuf0, sizeof(addrbuf0)),
                 ntohs(((struct sockaddr_in *)&(tds[0].targets[target_min_idx].dest))->sin_port),
-                per_target_pkt_cnt[target_min_idx],
+                per_target_item_cnt[target_min_idx],
                 inet_ntop(AF_INET,
                     get_in_addr((struct sockaddr *)&(tds[0].targets[target_max_idx].dest)),
                     addrbuf1, sizeof(addrbuf1)),
                 ntohs(((struct sockaddr_in *)&(tds[0].targets[target_max_idx].dest))->sin_port),
-                per_target_pkt_cnt[target_max_idx]
+                per_target_item_cnt[target_max_idx]
                 );
 #endif
 
         // calculate ideal excess lines/hits
-        excess_packets = per_target_pkt_cnt[target_max_idx] - per_target_pkt_cnt[target_min_idx];
+        excess_items = per_target_item_cnt[target_max_idx] - per_target_item_cnt[target_min_idx];
 #if defined(LOG_INFO)
         fprintf(stderr, "%lu - line diff: %lu - min(%u): %lu, max(%u): %lu, trying to shift up to %lu bytes\n",
                 time(NULL),
-                excess_packets,
+                excess_items,
                 target_min_idx,
-                per_target_pkt_cnt[target_min_idx],
+                per_target_item_cnt[target_min_idx],
                 target_max_idx,
-                per_target_pkt_cnt[target_max_idx],
-                excess_packets/2);
+                per_target_item_cnt[target_max_idx],
+                excess_items/2);
 #endif
-        // find hitter in biggest target which is closest to excess_packets/2
-        ht_find_best(*master_hashtable, &(tds[0].targets[target_max_idx]), excess_packets/2, &ht_e_best);
+        // find hitter in biggest target which is closest to excess_items/2
+        ht_find_best(*master_hashtable, &(tds[0].targets[target_max_idx]), excess_items/2, &ht_e_best);
 
 
         // cannot find any matching hashtable entry. abort
@@ -1235,11 +1242,12 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
 
 #if defined(LOG_INFO)
 
-        /* TODO:
-        fprintf(stderr, "%lu - moving high hitter: %s from: %s:%u (%p) to %s:%u (%p) (count: %lu)\n",
+        fprintf(stderr, "%lu - moving high hitter: %s:%u from: %s:%u (%p) to %s:%u (%p) (count: %lu)\n",
             time(NULL),
-            inet_ntop(AF_INET, (struct sockaddr_in *)&(ht_e_best->addr), addrbuf0,
-                sizeof(addrbuf0)),
+            inet_ntop(AF_INET,
+                get_in_addr((struct sockaddr *)&(ht_e_best->source)),
+                addrbuf0, sizeof(addrbuf0)),
+            ntohs(((struct sockaddr_in *)&(ht_e_best->source))->sin_port),
 
             // from:
             inet_ntop(AF_INET,
@@ -1255,8 +1263,7 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
             ntohs(((struct sockaddr_in *)&(tds[0].targets[target_min_idx].dest))->sin_port),
             &(tds[0].targets[target_min_idx]),
 
-            atomic_read(&(ht_e_best->packetcnt)));
-        */
+            atomic_read(&(ht_e_best->itemcnt)));
 #endif
 
         // move exporter (in ht_e_best) from target_max to target_min
@@ -1265,13 +1272,13 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
                 ht_e_best->key,
                 &(ht_e_best->source),
                 ht_e_best->target,
-                atomic_read(&(ht_e_best->packetcnt)),
+                atomic_read(&(ht_e_best->itemcnt)),
                 1,
                 0);
 
         // refresh counters
-        per_target_pkt_cnt[target_max_idx] -= atomic_read(&(ht_e_best->packetcnt));
-        per_target_pkt_cnt[target_min_idx] += atomic_read(&(ht_e_best->packetcnt));
+        per_target_item_cnt[target_max_idx] -= atomic_read(&(ht_e_best->itemcnt));
+        per_target_item_cnt[target_min_idx] += atomic_read(&(ht_e_best->itemcnt));
 
     } // end of for (itcnt = 0; itcnt < MAXOPTIMIZATIONITERATIONS; itcnt++) {
 
@@ -1299,7 +1306,7 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
     ht_reset_counters(*master_hashtable);
     // reset all thread counters
     for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
-        atomic_set(&(tds[0].targets[cnt].packetcnt), 0);
+        atomic_set(&(tds[0].targets[cnt].itemcnt), 0);
     }
     fprintf(stderr, "\n%lu ===================================================\n",
             time(NULL));

@@ -81,6 +81,10 @@ int main(int argc, char *argv[]) {
     uint8_t loadbalanced_dist_enabled = 0;
     uint8_t hash_based_dist_enabled = 0;
 
+    // load balance based on paket counts if 0
+    // load balance based on byte counts if 1
+    uint8_t loadbalance_bytecnt_based = 0;
+
     struct s_hashable* master_hashtable = NULL;
 
     // default: load balance every 50e6 lines, min difference between targets: 10%
@@ -98,7 +102,7 @@ int main(int argc, char *argv[]) {
     smp_mb__after_atomic();
 
     opterr = 0;
-    while ((c = getopt (argc, argv, "l:m:n:i:t:LH")) != -1)
+    while ((c = getopt (argc, argv, "l:m:n:i:t:LHb")) != -1)
     switch (c) {
         case 'l':
             split_addr(optarg, listenaddr, &listenport);
@@ -120,6 +124,9 @@ int main(int argc, char *argv[]) {
             fprintf(stderr, "%lu - use load-balancing while distributing\n",
                     time(NULL));
 #endif
+        break;
+        case 'b':
+            loadbalance_bytecnt_based = 1;
         break;
         case 'n':
             num_threads = atoi(optarg);
@@ -171,6 +178,16 @@ int main(int argc, char *argv[]) {
         default:
             usage(argc, argv);
     }
+
+#ifdef LOG_INFO
+    if (loadbalance_bytecnt_based)
+        fprintf(stderr, "%lu - use load-balancing based on byte counters\n",
+                time(NULL));
+    else
+        fprintf(stderr, "%lu - use load-balancing based on packet counters\n",
+                time(NULL));
+#endif
+
     num_targets = argc - optind;
     if (mode == 0xFF || num_threads == 0 || listenport == 0 ||
             (num_threads > MAXTHREADS) || (num_targets == 0))
@@ -204,6 +221,7 @@ int main(int argc, char *argv[]) {
                 tds[cnt].features.distribute = 1;
                 tds[cnt].features.load_balanced_dist = loadbalanced_dist_enabled;
                 tds[cnt].features.hash_based_dist = hash_based_dist_enabled;
+                tds[cnt].features.lb_bytecnt_based = loadbalance_bytecnt_based;
             break;
             case 'd':
                 tds[cnt].features.duplicate = 1;

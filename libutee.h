@@ -112,7 +112,7 @@ struct s_target {
     socklen_t dest_len;
     int fd;
     // per output / target stats
-    atomic_t packetcnt;
+    atomic_t itemcnt;
 };
 
 struct s_features {
@@ -120,6 +120,7 @@ struct s_features {
     uint8_t load_balanced_dist;
     uint8_t hash_based_dist;
     uint8_t duplicate;
+    uint8_t lb_bytecnt_based;
 };
 
 struct s_hashable {
@@ -127,7 +128,7 @@ struct s_hashable {
     struct sockaddr_storage source;
     struct s_target* target;
     // per hitter / source stats
-    atomic_t packetcnt;
+    atomic_t itemcnt;
     UT_hash_handle hh;
 };
 
@@ -173,7 +174,7 @@ struct s_hashable* ht_get(struct s_hashable **ht, uint64_t key);
 
 struct s_hashable* ht_get_add(struct s_hashable **ht, uint64_t key,
         struct sockaddr_storage* source, struct s_target* target,
-        uint64_t packetcnt, uint8_t overwrite, uint8_t sum_packetcnt);
+        uint64_t itemcnt, uint8_t overwrite, uint8_t sum_itemcnt);
 
 void ht_iterate(struct s_hashable *ht);
 
@@ -183,7 +184,7 @@ void ht_find_max(struct s_hashable *ht,
 
 void ht_find_best(struct s_hashable *ht,
         struct s_target *target,
-        uint64_t excess_packets,
+        uint64_t excess_items,
         struct s_hashable **ht_e_best);
 
 uint32_t ht_target_count(struct s_hashable *ht, struct s_target *target);
