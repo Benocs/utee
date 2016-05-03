@@ -71,7 +71,7 @@
 
 #define BUFLEN 4096
 #define MAXTHREADS 1024
-#define MAXOPTIMIZATIONITERATIONS 20
+#define MAXOPTIMIZATIONITERATIONS 500
 
 #define HASH_MOD(key, keylen, num_bkts, hashv, bkt)                           \
 do {                                                                          \
