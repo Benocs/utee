@@ -194,9 +194,9 @@ struct s_target* hash_based_output(uint64_t key, struct s_thread_data* td) {
 }
 
 struct s_hashable* ht_get(struct s_hashable **ht, uint64_t key) {
-    struct s_hashable *ht_e;
+    struct s_hashable *ht_e = NULL;
 
-    HASH_FIND_INT(*ht, &key, ht_e);
+    HASH_FIND(hh, *ht, &key, sizeof(key), ht_e);
 
     return ht_e;
 }
@@ -204,18 +204,20 @@ struct s_hashable* ht_get(struct s_hashable **ht, uint64_t key) {
 struct s_hashable* ht_get_add(struct s_hashable **ht, uint64_t key,
         struct sockaddr_storage* source, struct s_target* target,
         uint64_t itemcnt, uint8_t overwrite, uint8_t sum_itemcnt) {
-    struct s_hashable *ht_e;
+    struct s_hashable *ht_e = NULL;
 #if defined(HASH_DEBUG)
     char addrbuf0[INET6_ADDRSTRLEN];
     char addrbuf1[INET6_ADDRSTRLEN];
+    char addrbuf2[INET6_ADDRSTRLEN];
     uint8_t added = 0;
 #endif
 
-    HASH_FIND_INT(*ht, &key, ht_e);
+    HASH_FIND(hh, *ht, &key, sizeof(key), ht_e);
     if (ht_e == NULL) {
 #if defined(HASH_DEBUG)
-        fprintf(stderr, "%lu - ht: addr: %s:%u not found. adding output: %s:%u\n",
+        fprintf(stderr, "%lu - ht: key: 0x%lx, addr: %s:%u not found. adding output: %s:%u\n",
             time(NULL),
+            key,
             get_ip(source, addrbuf0),
             get_port(source),
             get_ip(&(target->dest), addrbuf1),
@@ -234,7 +236,7 @@ struct s_hashable* ht_get_add(struct s_hashable **ht, uint64_t key,
         smp_mb__before_atomic();
         atomic_set(&(ht_e->itemcnt), itemcnt);
         smp_mb__after_atomic();
-        HASH_ADD_INT(*ht, key, ht_e);
+        HASH_ADD(hh, *ht, key, sizeof(key), ht_e);
     }
     else if (overwrite) {
         //ht_e->key = key;
@@ -262,8 +264,9 @@ struct s_hashable* ht_get_add(struct s_hashable **ht, uint64_t key,
         smp_mb__after_atomic();
 
 #if defined(HASH_DEBUG)
-        fprintf(stderr, "%lu - ht: addr: %s:%u found. overwriting. using new output: %s:%u\n",
+        fprintf(stderr, "%lu - ht: key: 0x%lx, addr: %s:%u found. overwriting. using new output: %s:%u\n",
             time(NULL),
+            key,
             get_ip(source, addrbuf0),
             get_port(source),
             get_ip(&(ht_e->target->dest), addrbuf1),
@@ -273,12 +276,17 @@ struct s_hashable* ht_get_add(struct s_hashable **ht, uint64_t key,
 
 #if defined(HASH_DEBUG)
     if (!added) {
-        fprintf(stderr, "%lu - ht: addr: %s:%u found. not overwriting. using output: %s:%u\n",
+        fprintf(stderr, "%lu - ht: key: 0x%lx, addr: %s:%u found. not overwriting. using output: %s:%u. ht_key: 0x%lx, ht_addr: %s:%u\n",
             time(NULL),
+            key,
             get_ip(source, addrbuf0),
             get_port(source),
             get_ip(&(ht_e->target->dest), addrbuf1),
-            get_port(&(ht_e->target->dest)));
+            get_port(&(ht_e->target->dest)),
+            ht_e->key,
+            get_ip(&(ht_e->source), addrbuf2),
+            get_port(&(ht_e->source))
+            );
     }
 #endif
     return ht_e;
@@ -371,8 +379,10 @@ void ht_find_best(struct s_hashable *ht,
         if (s->target != target)
             continue;
 
-#if defined(HASH_DEBUG) || defined(LOAD_BALANCE_DEBUG)
+#if (defined(HASH_DEBUG) || defined(LOAD_BALANCE_DEBUG))
         tcnt += atomic_read(&(s->itemcnt));
+#endif
+#if (defined(HASH_DEBUG) || defined(LOAD_BALANCE_DEBUG)) && defined(DEBUG_VERBOSE)
 
         fprintf(stderr, "%lu - ht_find_best: count: %lu\tkey: 0x%lx\taddr: %s:%u, target: %s:%u\n",
             time(NULL),
