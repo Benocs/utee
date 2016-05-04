@@ -119,10 +119,9 @@ void setup_udp_header(struct udphdr *udph, uint16_t udp_payload_len,
 }
 
 // TODO: this is not IPv6 safe
-uint64_t create_key_from_addr(struct sockaddr_storage* addr) {
+uint64_t create_ht_key_from_addr(struct sockaddr_storage* addr) {
     if (addr->ss_family == AF_INET) {
-        return (((uint64_t)ntohl(((struct sockaddr_in*)addr)->sin_addr.s_addr)) << 32) + \
-                ntohs(((struct sockaddr_in *)addr)->sin_port);
+        return (uint64_t)ntohl(((struct sockaddr_in*)addr)->sin_addr.s_addr);
     }
     else {
         // TODO: this is not IPv6 safe
@@ -593,13 +592,13 @@ void *demux(void *arg0) {
 
         if (features->hash_based_dist || features->load_balanced_dist) {
             target = (struct s_target*)hash_based_output(
-                    create_key_from_addr(&source_addr), td);
+                    CREATE_HT_KEY(&source_addr), td);
             target_addr = (struct sockaddr_in*)&(target->dest);
         }
 
         if (features->load_balanced_dist) {
             ht_e = (struct s_hashable*) ht_get_add(hashtable,
-                    create_key_from_addr(&source_addr),
+                    CREATE_HT_KEY(&source_addr),
                     &source_addr,
                     target, 0, 0, 0);
 

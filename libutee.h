@@ -107,6 +107,12 @@ do {                                                                          \
 #define HASH_ADDR HASH_MOD
 #endif
 
+uint64_t create_ht_key_from_addr(struct sockaddr_storage* addr);
+
+#ifndef CREATE_HT_KEY
+#define CREATE_HT_KEY create_ht_key_from_addr
+#endif
+
 struct s_target {
     struct sockaddr_storage dest;
     socklen_t dest_len;
