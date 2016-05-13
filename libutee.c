@@ -484,6 +484,7 @@ void ht_delete_all(struct s_hashable *ht) {
         free(s);
     }
     free(ht);
+    ht = NULL;
 }
 
 void *demux(void *arg0) {
@@ -720,7 +721,10 @@ void *demux(void *arg0) {
 #endif
     ht_delete_all(*hashtable);
     ht_delete_all(td->hashtable_ro);
-    ht_delete_all(td->hashtable_ro_old);
+    // only try to delete old hashtable if it still has entries. otherwise
+    // the master-thread has already deleted it (for us)
+    if (!(td->hashtable_ro_old == NULL))
+        ht_delete_all(td->hashtable_ro_old);
     return NULL;
 }
 
