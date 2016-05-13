@@ -55,7 +55,6 @@ volatile uint8_t run_flag = 1;
 struct s_thread_data tds[MAXTHREADS];
 uint16_t num_threads = 0;
 
-struct s_hashable* master_hashtable_ro = NULL;
 atomic_t master_hashtable_idx;
 
 /*
@@ -447,6 +446,9 @@ uint32_t ht_target_count(struct s_hashable *ht, struct s_target *target) {
 void ht_copy(struct s_hashable *ht_from, struct s_hashable **ht_to) {
     struct s_hashable *s;
 
+#if defined(HASH_DEBUG)
+    fprintf(stderr, "%lu - ht_copy: copying hashtable. ignore ht_get_add prints\n", time(NULL));
+#endif
     smp_mb__before_atomic();
     for(s=ht_from; s != NULL; s=s->hh.next) {
         ht_get_add(ht_to,
@@ -458,6 +460,9 @@ void ht_copy(struct s_hashable *ht_from, struct s_hashable **ht_to) {
                 0);
     }
     smp_mb__after_atomic();
+#if defined(HASH_DEBUG)
+    fprintf(stderr, "%lu - ht_copy: done copying hashtable.\n", time(NULL));
+#endif
 }
 
 void ht_reset_counters(struct s_hashable *ht) {
@@ -542,9 +547,10 @@ void *demux(void *arg0) {
                     time(NULL), td->thread_id, atomic_read(&master_hashtable_idx));
 #endif
 
-            // copy: from, to
-            ht_copy(master_hashtable_ro, hashtable);
-            td->hashtable = *hashtable;
+            // set next hashtable
+            td->hashtable_ro_old = td->hashtable;
+            td->hashtable = td->hashtable_ro;
+            td->hashtable_ro = NULL;
             hashtable = &(td->hashtable);
             atomic_set(&(td->last_used_master_hashtable_idx), atomic_read(&master_hashtable_idx));
             smp_mb__after_atomic();
@@ -713,6 +719,8 @@ void *demux(void *arg0) {
             time(NULL), td->thread_id);
 #endif
     ht_delete_all(*hashtable);
+    ht_delete_all(td->hashtable_ro);
+    ht_delete_all(td->hashtable_ro_old);
     return NULL;
 }
 
@@ -1267,7 +1275,7 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
     } // end of for (itcnt = 0; itcnt < MAXOPTIMIZATIONITERATIONS; itcnt++) {
 
     smp_mb__before_atomic();
-    // wait for all threads to release 'lock' on master_hashtable_ro
+    // wait for all threads to release 'lock' on tds[cnt]->hashtable_ro
     do {
         threads_reading_from_master = 0;
         for (cnt = 0; cnt < num_threads; cnt++ ) {
@@ -1284,10 +1292,13 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
         }
     } while(threads_reading_from_master);
 
-    // delete last ro-hashtable
-    ht_delete_all(master_hashtable_ro);
     // reset all counters in next hashtable
     ht_reset_counters(*master_hashtable);
+    // delete last ro-hashtable and set next ro-hashtable
+    for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
+        ht_delete_all(tds[cnt].hashtable_ro_old);
+        ht_copy(*master_hashtable, &(tds[cnt].hashtable_ro));
+    }
     // reset all thread counters
     for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
         atomic_set(&(tds[0].targets[cnt].itemcnt), 0);
@@ -1295,9 +1306,8 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
     fprintf(stderr, "\n%lu ===================================================\n",
             time(NULL));
 
-    // set next hashtable as ro
-    master_hashtable_ro = *master_hashtable;
     smp_mb__after_atomic();
+    ht_delete_all(*master_hashtable);
     // release master pointer to next hashtable
     *master_hashtable = NULL;
     // increase hashtable version to signal threads that a new version is available

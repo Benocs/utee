@@ -145,6 +145,8 @@ struct s_thread_data {
     uint32_t num_targets;
     struct s_features features;
     struct s_hashable* hashtable;
+    struct s_hashable* hashtable_ro;
+    struct s_hashable* hashtable_ro_old;
 
     atomic_t last_used_master_hashtable_idx;
 };

@@ -271,6 +271,5 @@ int main(int argc, char *argv[]) {
     }
 
     ht_delete_all(master_hashtable);
-    ht_delete_all(master_hashtable_ro);
     return 0;
 }
