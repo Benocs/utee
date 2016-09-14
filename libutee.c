@@ -1190,6 +1190,11 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
                 target_max_idx = cnt;
         }
 
+        // min and max target are the same (and thus all other ones with respect to min, max)
+        // abort optimization in this case since shifting from and to the same target does not make sense
+        if (target_min_idx == target_max_idx)
+            break;
+
         target_avg = per_target_item_cnt[target_min_idx] / (double)tot_cnt;
         if (((target_avg / ideal_avg) < 1) && (1 - (target_avg / ideal_avg) > reorder_threshold))
             hit_reordering_threshold = 1;
