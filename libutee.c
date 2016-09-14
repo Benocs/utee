@@ -1226,7 +1226,17 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
 #endif
 
         // calculate ideal excess lines/hits
+        // TODO: shouldn't this be changed to excess_items = target_avg / ideal_avg?
+
         excess_items = per_target_item_cnt[target_max_idx] - per_target_item_cnt[target_min_idx];
+        // divide excess_items by two to evenly distriube excess items. if this is not done,
+        // target_min_idx would immediately be an output with the most traffic
+        excess_items = excess_items / 2;
+
+        // if excess_items is 0, abort optimization (shifting 0 from somewhere to somewhere else is mindless)
+        if (! excess_items)
+            break;
+
 #if defined(LOG_INFO)
         fprintf(stderr, "%lu - line diff: %lu - min(%u): %lu, max(%u): %lu, trying to shift up to %lu bytes\n",
                 time(NULL),
@@ -1235,10 +1245,10 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
                 per_target_item_cnt[target_min_idx],
                 target_max_idx,
                 per_target_item_cnt[target_max_idx],
-                excess_items/2);
+                excess_items);
 #endif
-        // find hitter in biggest target which is closest to excess_items/2
-        ht_find_best(*master_hashtable, &(tds[0].targets[target_max_idx]), excess_items/2, &ht_e_best);
+        // find hitter in biggest target which is closest to excess_items
+        ht_find_best(*master_hashtable, &(tds[0].targets[target_max_idx]), excess_items, &ht_e_best);
 
 
         // cannot find any matching hashtable entry. abort
