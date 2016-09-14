@@ -1073,6 +1073,8 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
 
     uint8_t threads_reading_from_master;
 
+    uint8_t invalidated_targets[MAXTHREADS];
+
 #if defined(DEBUG) || defined(LOG_INFO)
     char addrbuf0[INET6_ADDRSTRLEN];
     char addrbuf1[INET6_ADDRSTRLEN];
@@ -1104,6 +1106,9 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
 #endif
         return;
     }
+
+    for (cnt = 0; cnt < num_threads; cnt++)
+        invalidated_targets[cnt] = 0;
 
 #if defined(DEBUG)
     fprintf(stderr, "%lu - len(master_hashtable) before thread merging: %u\n",
@@ -1174,9 +1179,11 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
         // find target with smallest counter and target with largest counter
         target_min_idx = 0;
 
-        // initialize target_max_idx with first target that has more than one sources
+        // initialize target_max_idx with first _valid_ target that
+        // has more than one source
         for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
-            if (ht_target_count(*master_hashtable, &(tds[0].targets[cnt])) > 1) {
+            if (ht_target_count(*master_hashtable, &(tds[0].targets[cnt])) > 1 &&
+                    (! invalidated_targets[cnt])) {
                 target_max_idx = cnt;
                 break;
             }
@@ -1186,9 +1193,15 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
             if (per_target_item_cnt[cnt] < per_target_item_cnt[target_min_idx])
                 target_min_idx = cnt;
             if (per_target_item_cnt[cnt] > per_target_item_cnt[target_max_idx] &&
-                    ht_target_count(*master_hashtable, &(tds[0].targets[cnt])) > 1)
+                    ht_target_count(*master_hashtable, &(tds[0].targets[cnt])) > 1 &&
+                    (! invalidated_targets[cnt]))
                 target_max_idx = cnt;
         }
+
+        // if target_max is in the invalidated_targets set, abort optimization as
+        // we do not have an invalid target
+        if (invalidated_targets[target_max_idx])
+            break;
 
         // min and max target are the same (and thus all other ones with respect to min, max)
         // abort optimization in this case since shifting from and to the same target does not make sense
@@ -1253,44 +1266,43 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
 
         // cannot find any matching hashtable entry. abort
         if (ht_e_best == NULL) {
-            fprintf(stderr,  "%lu - [ERROR] no ht_e_best found\n", time(NULL));
-            break;
+            fprintf(stderr,  "%lu - [ERROR] no ht_e_best found. invalidating target: %u\n", time(NULL), target_max_idx);
+            invalidated_targets[target_max_idx] = 1;
         }
-
+        else {
 #if defined(LOG_INFO)
+            fprintf(stderr, "%lu - moving high hitter: %s:%u from: %s:%u (%p) to %s:%u (%p) (count: %lu)\n",
+                time(NULL),
+                get_ip(&(ht_e_best->source), addrbuf0),
+                get_port(&(ht_e_best->source)),
 
-        fprintf(stderr, "%lu - moving high hitter: %s:%u from: %s:%u (%p) to %s:%u (%p) (count: %lu)\n",
-            time(NULL),
-            get_ip(&(ht_e_best->source), addrbuf0),
-            get_port(&(ht_e_best->source)),
+                // from:
+                get_ip(&(ht_e_best->target->dest), addrbuf1),
+                get_port(&(ht_e_best->target->dest)),
+                ht_e_best->target,
 
-            // from:
-            get_ip(&(ht_e_best->target->dest), addrbuf1),
-            get_port(&(ht_e_best->target->dest)),
-            ht_e_best->target,
+                // to:
+                get_ip(&(tds[0].targets[target_min_idx].dest), addrbuf2),
+                get_port(&(tds[0].targets[target_min_idx].dest)),
+                &(tds[0].targets[target_min_idx]),
 
-            // to:
-            get_ip(&(tds[0].targets[target_min_idx].dest), addrbuf2),
-            get_port(&(tds[0].targets[target_min_idx].dest)),
-            &(tds[0].targets[target_min_idx]),
-
-            atomic_read(&(ht_e_best->itemcnt)));
+                atomic_read(&(ht_e_best->itemcnt)));
 #endif
 
-        // move exporter (in ht_e_best) from target_max to target_min
-        ht_e_best->target = &(tds[0].targets[target_min_idx]);
-        ht_get_add(master_hashtable,
-                ht_e_best->key,
-                &(ht_e_best->source),
-                ht_e_best->target,
-                atomic_read(&(ht_e_best->itemcnt)),
-                1,
-                0);
+            // move exporter (in ht_e_best) from target_max to target_min
+            ht_e_best->target = &(tds[0].targets[target_min_idx]);
+            ht_get_add(master_hashtable,
+                    ht_e_best->key,
+                    &(ht_e_best->source),
+                    ht_e_best->target,
+                    atomic_read(&(ht_e_best->itemcnt)),
+                    1,
+                    0);
 
-        // refresh counters
-        per_target_item_cnt[target_max_idx] -= atomic_read(&(ht_e_best->itemcnt));
-        per_target_item_cnt[target_min_idx] += atomic_read(&(ht_e_best->itemcnt));
-
+            // refresh counters
+            per_target_item_cnt[target_max_idx] -= atomic_read(&(ht_e_best->itemcnt));
+            per_target_item_cnt[target_min_idx] += atomic_read(&(ht_e_best->itemcnt));
+        }
     } // end of for (itcnt = 0; itcnt < MAXOPTIMIZATIONITERATIONS; itcnt++) {
 
     smp_mb__before_atomic();
