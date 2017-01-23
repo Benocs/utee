@@ -1215,7 +1215,7 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
         }
 
         // if target_max is in the invalidated_targets set, abort optimization as
-        // we do not have an invalid target
+        // we do not have a valid target
         if (invalidated_targets[target_max_idx])
             break;
 
