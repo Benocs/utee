@@ -1170,6 +1170,8 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
             if (cnt && (cnt+1) % 8 == 0)
                 fprintf(stderr, "\n\t");
         }
+        fprintf(stderr, "\ntarget source mapping:\n");
+        ht_iterate(*master_hashtable);
         fprintf(stderr, "\n");
     }
 #endif
