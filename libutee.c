@@ -1074,6 +1074,7 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
     uint8_t threads_reading_from_master;
 
     uint8_t invalidated_targets[MAXTHREADS];
+    uint8_t found_first_valid_target = 0;
 
 #if defined(DEBUG) || defined(LOG_INFO)
     char addrbuf0[INET6_ADDRSTRLEN];
@@ -1178,16 +1179,31 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
 
         // find target with smallest counter and target with largest counter
         target_min_idx = 0;
+        target_max_idx = 0;
 
         // initialize target_max_idx with first _valid_ target that
         // has more than one source
+        found_first_valid_target = 0;
         for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
             if (ht_target_count(*master_hashtable, &(tds[0].targets[cnt])) > 1 &&
                     (! invalidated_targets[cnt])) {
                 target_max_idx = cnt;
+                found_first_valid_target = 1;
                 break;
             }
         }
+
+        // catch a corner case: if all targets have equal or less than one
+        // source, then the above loop will set target 0 as target_max_idx
+        // which is it's initialization value but which also is, in this case,
+        // wrong. so, we invalidate this target here so that is not being considered
+        // as a valid target to shift traffic away from.
+        // in essence, this disables any load balancing for such a setup - the
+        // only thing that will happen is that each source gets mapped to one distinct
+        // target.
+        if (found_first_valid_target == 0 && target_max_idx == 0)
+            invalidated_targets[target_max_idx] = 1;
+
 
         for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
             if (per_target_item_cnt[cnt] < per_target_item_cnt[target_min_idx])
