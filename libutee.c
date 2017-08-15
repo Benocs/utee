@@ -487,10 +487,185 @@ void ht_delete_all(struct s_hashable *ht) {
     ht = NULL;
 }
 
-void *demux(void *arg0) {
+struct s_hashable** cb_pre_pkt_read_load_balance(struct s_thread_data *td) {
+    smp_mb__before_atomic();
+
+    struct s_hashable** hashtable;
+
+    if (atomic_read(&(td->last_used_master_hashtable_idx)) != atomic_read(&master_hashtable_idx)) {
+#ifdef DEBUG_VERBOSE
+        // print hashtable of thread 0 (they're all the same)
+        if (td->thread_id == 0 && atomic_read(&(td->last_used_master_hashtable_idx)) == 0) {
+            fprintf(stderr, "%lu - listener %d: orig hashtable:\n",
+                    time(NULL), td->thread_id);
+            ht_iterate(td->hashtable);
+            fprintf(stderr, "\n");
+        }
+#endif
+#ifdef DEBUG
+        fprintf(stderr, "%lu - listener %d: new master hash map available (%lu)\n",
+                time(NULL), td->thread_id, atomic_read(&master_hashtable_idx));
+#endif
+
+        // set next hashtable
+        td->hashtable_ro_old = td->hashtable;
+        td->hashtable = td->hashtable_ro;
+        td->hashtable_ro = NULL;
+        hashtable = &(td->hashtable);
+        atomic_set(&(td->last_used_master_hashtable_idx), atomic_read(&master_hashtable_idx));
+        smp_mb__after_atomic();
+
+#ifdef DEBUG_VERBOSE
+        // print hashtable of thread 0 (they're all the same)
+        if (td->thread_id == 0) {
+            fprintf(stderr, "%lu - listener %d: new hashtable:\n",
+                    time(NULL), td->thread_id);
+            ht_iterate(*hashtable);
+            fprintf(stderr, "\n");
+        }
+#endif
+    }
+
+    return hashtable;
+}
+
+void cb_pre_pkt_read_duplicate(void) {
+}
+
+struct s_target*  cb_pkt_process_load_balance(
+        struct s_thread_data *td,
+        struct sockaddr_storage* source_addr,
+        int numbytes,
+        struct iphdr *iph,
+        struct udphdr *udph,
+        struct s_hashable** ptr_ht_e
+        ) {
+
+    struct s_hashable** hashtable = &(td->hashtable);
+
+    struct s_features *features = &(td->features);
+    struct s_target *target;
+
+#if defined ENABLE_IPV6
+#else
+        struct sockaddr_in *target_addr;
+#endif
+
+    if (features->hash_based_dist || features->load_balanced_dist) {
+        target = (struct s_target*)hash_based_output(
+                CREATE_HT_KEY(source_addr), td);
+        target_addr = (struct sockaddr_in*)&(target->dest);
+    }
+
+    if (features->load_balanced_dist) {
+        *ptr_ht_e = (struct s_hashable*) ht_get_add(hashtable,
+                CREATE_HT_KEY(source_addr),
+                source_addr,
+                target, 0, 0, 0);
+
+        if (*ptr_ht_e == NULL) {
+            fprintf(stderr, "%lu - ERROR: listener %d: Error while adding element to hashtable\n",
+                    time(NULL), td->thread_id);
+            exit(1);
+        }
+
+        target = (*ptr_ht_e)->target;
+    }
+
+#if defined(HASH_DEBUG)
+    if (features->hash_based_dist || features->load_balanced_dist)
+        smp_mb__before_atomic();
+    fprintf(stderr, "%lu - listener %d: hash result for addr: target: %s:%u (count: %lu)\n",
+            time(NULL),
+            td->thread_id,
+            get_ip((struct sockaddr_storage *)target_addr, addrbuf0),
+            get_port((struct sockaddr_storage *)target_addr),
+            atomic_read(&((*ptr_ht_e)->itemcnt)));
+#endif
+
+    update_udp_header(udph, numbytes,
+            ((struct sockaddr_in*)source_addr)->sin_port,
+            target_addr->sin_port);
+
+    update_ip_header(iph, sizeof(struct udphdr) + numbytes,
+                        ((struct sockaddr_in*)source_addr)->sin_addr.s_addr,
+                        target_addr->sin_addr.s_addr);
+
+    return target;
+}
+
+void cb_pkt_process_duplicate(
+        struct sockaddr_in* target_addr,
+        uint8_t target_cnt,
+        struct s_thread_data *td,
+        struct sockaddr_storage* source_addr,
+        int numbytes,
+        struct iphdr *iph,
+        struct udphdr *udph) {
+
+    update_udp_header(udph, numbytes,
+            ((struct sockaddr_in*)source_addr)->sin_port,
+            ((struct sockaddr_in*)target_addr)->sin_port);
+    update_ip_header(iph, sizeof(struct udphdr) + numbytes,
+            ((struct sockaddr_in*)source_addr)->sin_addr.s_addr,
+            ((struct sockaddr_in*)target_addr)->sin_addr.s_addr);
+}
+
+void cb_post_pkt_send_load_balance(
+        struct s_features *features,
+        int32_t bytes_written,
+        struct s_hashable* ht_e,
+        struct s_target* target) {
+
+    if (features->load_balanced_dist) {
+        // NOTE: need atomic_inc for target-cnt as it is shared between all threads
+
+        smp_mb__before_atomic();
+        if (features->lb_bytecnt_based) {
+            // update per source bytecnt
+            atomic_add(bytes_written, &(ht_e->itemcnt));
+            // update per target bytetcnt
+            atomic_add(bytes_written, &(target->itemcnt));
+        }
+        else {
+            // update per source packetcnt
+            atomic_inc(&(ht_e->itemcnt));
+            // update per target packetcnt
+            atomic_inc(&(target->itemcnt));
+        }
+        smp_mb__after_atomic();
+    }
+}
+
+void cb_post_pkt_send_duplicate(void) {
+}
+
+void cb_shutdown_load_balance(
+        struct s_hashable* hashtable,
+        struct s_thread_data* td) {
+
+    ht_delete_all(hashtable);
+    ht_delete_all(td->hashtable_ro);
+    // only try to delete old hashtable if it still has entries. otherwise
+    // the master-thread has already deleted it (for us)
+    if (!(td->hashtable_ro_old == NULL))
+        ht_delete_all(td->hashtable_ro_old);
+}
+
+void cb_shutdown_duplicate(void) {
+}
+
+void *tee(void *arg0) {
     struct s_thread_data *td = (struct s_thread_data *)arg0;
     struct s_features *features = &(td->features);
-    struct s_hashable** hashtable = &(td->hashtable);
+
+    uint8_t opcode = OPCODE_LOAD_BALANCE;
+    if (features->distribute)
+        opcode = OPCODE_LOAD_BALANCE;
+    else if (features->duplicate)
+        opcode = OPCODE_DUPLICATE;
+
+    struct s_hashable** hashtable;
     struct s_hashable* ht_e;
 
     // incoming packets
@@ -502,18 +677,22 @@ void *demux(void *arg0) {
     char datagram[BUFLEN];
     struct iphdr *iph = (struct iphdr *)datagram;
     struct udphdr *udph = (/*u_int8_t*/void *)iph + sizeof(struct iphdr);
-    struct s_target *target = &(td->targets[td->thread_id]);
-
-#if defined ENABLE_IPV6
-#else
-    struct sockaddr_in *target_addr = (struct sockaddr_in *)&(target->dest);
-#endif
 
     memset(datagram, 0, BUFLEN);
     // Set appropriate fields in headers
     setup_ip_header(iph, 0, 0, 0);
     setup_udp_header(udph, 0, 0, 0);
     char *data = (char *)udph + sizeof(struct udphdr);
+
+    struct s_target *target = &(td->targets[td->thread_id]);
+#if defined ENABLE_IPV6
+#else
+    struct sockaddr_in *target_addr = (struct sockaddr_in *)&(target->dest);
+#endif
+
+    // helper variables
+
+    uint16_t cnt;
 
 #if defined(DEBUG) || defined(LOG_ERROR) || defined(DEBUG_SOCKETS)
     char addrbuf0[INET6_ADDRSTRLEN];
@@ -532,240 +711,17 @@ void *demux(void *arg0) {
 #endif
 
     while (run_flag) {
-        smp_mb__before_atomic();
-        if (atomic_read(&(td->last_used_master_hashtable_idx)) != atomic_read(&master_hashtable_idx)) {
-#ifdef DEBUG_VERBOSE
-            // print hashtable of thread 0 (they're all the same)
-            if (td->thread_id == 0 && atomic_read(&(td->last_used_master_hashtable_idx)) == 0) {
-                fprintf(stderr, "%lu - listener %d: orig hashtable:\n",
-                        time(NULL), td->thread_id);
-                ht_iterate(td->hashtable);
-                fprintf(stderr, "\n");
-            }
-#endif
-#ifdef DEBUG
-            fprintf(stderr, "%lu - listener %d: new master hash map available (%lu)\n",
-                    time(NULL), td->thread_id, atomic_read(&master_hashtable_idx));
-#endif
 
-            // set next hashtable
-            td->hashtable_ro_old = td->hashtable;
-            td->hashtable = td->hashtable_ro;
-            td->hashtable_ro = NULL;
-            hashtable = &(td->hashtable);
-            atomic_set(&(td->last_used_master_hashtable_idx), atomic_read(&master_hashtable_idx));
-            smp_mb__after_atomic();
-
-#ifdef DEBUG_VERBOSE
-            // print hashtable of thread 0 (they're all the same)
-            if (td->thread_id == 0) {
-                fprintf(stderr, "%lu - listener %d: new hashtable:\n",
-                        time(NULL), td->thread_id);
-                ht_iterate(*hashtable);
-                fprintf(stderr, "\n");
-            }
-#endif
+        // callback pre packet read
+        switch (opcode) {
+            case OPCODE_LOAD_BALANCE:
+                hashtable = cb_pre_pkt_read_load_balance(td);
+                break;
+            case OPCODE_DUPLICATE:
+                cb_pre_pkt_read_duplicate();
+                break;
         }
 
-#ifdef USE_SELECT_READ
-        tv.tv_sec = 0;
-        tv.tv_usec = 100000;
-        FD_SET(td->sockfd, &rfds);
-        retval = select((td->sockfd)+1, &rfds, NULL, NULL, &tv);
-
-        if (retval == -1) {
-            perror("select()");
-            continue;
-        }
-        else if (!retval) {
-            continue;
-        }
-#endif
-        if ((numbytes = recvfrom(td->sockfd, data, BUFLEN-sizeof(struct iphdr)-sizeof(struct udphdr), 0,
-                (struct sockaddr *)&source_addr, &addr_len)) == -1) {
-            perror("recvfrom");
-            continue;
-        }
-
-        if (numbytes > 1472) {
-#ifdef LOG_ERROR
-            fprintf(stderr, "%lu - ERROR: listener %d: packet is %d bytes long cropping to 1472\n",
-                    time(NULL), td->thread_id, numbytes);
-#endif
-            numbytes = 1472;
-        }
-
-        data[numbytes] = '\0';
-
-        if (features->hash_based_dist || features->load_balanced_dist) {
-            target = (struct s_target*)hash_based_output(
-                    CREATE_HT_KEY(&source_addr), td);
-            target_addr = (struct sockaddr_in*)&(target->dest);
-        }
-
-        if (features->load_balanced_dist) {
-            ht_e = (struct s_hashable*) ht_get_add(hashtable,
-                    CREATE_HT_KEY(&source_addr),
-                    &source_addr,
-                    target, 0, 0, 0);
-
-            if (ht_e == NULL) {
-                fprintf(stderr, "%lu - ERROR: listener %d: Error while adding element to hashtable\n",
-                        time(NULL), td->thread_id);
-                exit(1);
-            }
-
-            target = ht_e->target;
-            target_addr = (struct sockaddr_in*)&(target->dest);
-        }
-
-#if defined(HASH_DEBUG)
-        if (features->hash_based_dist || features->load_balanced_dist)
-            smp_mb__before_atomic();
-            fprintf(stderr, "%lu - listener %d: hash result for addr: target: %s:%u (count: %lu)\n",
-                    time(NULL),
-                    td->thread_id,
-                    get_ip((struct sockaddr_storage *)target_addr, addrbuf0),
-                    get_port((struct sockaddr_storage *)target_addr),
-                    atomic_read(&(ht_e->itemcnt)));
-#endif
-
-        update_udp_header(udph, numbytes,
-                ((struct sockaddr_in*)&source_addr)->sin_port,
-                target_addr->sin_port);
-
-        update_ip_header(iph, sizeof(struct udphdr) + numbytes,
-                         ((struct sockaddr_in*)&source_addr)->sin_addr.s_addr,
-                         target_addr->sin_addr.s_addr);
-
-#ifdef DEBUG_SOCKETS
-        fprintf(stderr, "%lu - listener %d: got packet from %s:%d\n",
-            time(NULL),
-            td->thread_id,
-            get_ip(&source_addr, addrbuf0),
-            get_port(&source_addr));
-        fprintf(stderr, "%lu - listener %d: packet is %d bytes long\n",
-                time(NULL), td->thread_id, numbytes);
-        fprintf(stderr, "%lu - listener %d: sending packet: %s:%u => %s:%u: len: %u\n",
-            time(NULL),
-            td->thread_id,
-            get_ip4_uint(iph->saddr, addrbuf0),
-            get_port4_uint(udph->source),
-            get_ip4_uint(iph->daddr, addrbuf1),
-            get_port4_uint(udph->dest),
-            iph->tot_len);
-#endif
-
-#ifdef USE_SELECT_WRITE
-        do {
-            do {
-                tv.tv_sec = 0;
-                tv.tv_usec = 100000;
-                FD_SET(target->fd, &wfds);
-                retval = select((target->fd)+1, NULL, &wfds, NULL, &tv);
-
-                if (retval == -1)
-                    perror("select()");
-            } while (retval <= 0);
-#endif
-            int32_t written;
-            if ((written = sendto(target->fd, datagram, iph->tot_len, 0, (struct sockaddr *) target_addr, sizeof(*target_addr))) < 0) {
-                perror("sendto failed");
-                fprintf(stderr, "%lu - listener %d: error in write %s - %d\n", time(NULL), td->thread_id, strerror(errno), errno);
-#ifdef USE_SELECT_WRITE
-                retval = -1;
-#endif
-            }
-            else {
-                if (features->load_balanced_dist) {
-                    // NOTE: need atomic_inc for target-cnt as it is shared between all threads
-
-                    smp_mb__before_atomic();
-                    if (features->lb_bytecnt_based) {
-                        // update per source bytecnt
-                        atomic_add(written, &(ht_e->itemcnt));
-                        // update per target bytetcnt
-                        atomic_add(written, &(target->itemcnt));
-                    }
-                    else {
-                        // update per source packetcnt
-                        atomic_inc(&(ht_e->itemcnt));
-                        // update per target packetcnt
-                        atomic_inc(&(target->itemcnt));
-                    }
-                    smp_mb__after_atomic();
-                }
-
-                if ( written != iph->tot_len) {
-                    // handle this short write - log and move on
-#ifdef LOG_ERROR
-                    fprintf(stderr, "%lu - ERROR: listener %d: short write: sent packet: %s:%u => %s:%u: len: %u written: %d\n",
-                        time(NULL),
-                        td->thread_id,
-                        get_ip4_uint(iph->saddr, addrbuf0),
-                        get_port4_uint(udph->source),
-                        get_ip4_uint(iph->daddr, addrbuf1),
-                        get_port4_uint(udph->dest),
-                        iph->tot_len, written);
-#endif
-                }
-            }
-#ifdef USE_SELECT_WRITE
-        } while (retval <= 0);
-#endif
-    }
-
-#ifdef LOG_INFO
-    fprintf(stderr, "%lu - [listener %u] shutting down\n",
-            time(NULL), td->thread_id);
-#endif
-    ht_delete_all(*hashtable);
-    ht_delete_all(td->hashtable_ro);
-    // only try to delete old hashtable if it still has entries. otherwise
-    // the master-thread has already deleted it (for us)
-    if (!(td->hashtable_ro_old == NULL))
-        ht_delete_all(td->hashtable_ro_old);
-    return NULL;
-}
-
-void *tee(void *arg0) {
-    uint16_t cnt;
-
-    struct s_thread_data *td = (struct s_thread_data *)arg0;
-    struct s_features *features = &(td->features);
-
-    // incoming packets
-    int numbytes = 0;
-    struct sockaddr_storage source_addr;
-    socklen_t addr_len = sizeof(source_addr);
-
-    // outgoing packets
-    char datagram[BUFLEN];
-    struct iphdr *iph = (struct iphdr *)datagram;
-    struct udphdr *udph = (/*u_int8_t*/void *)iph + sizeof(struct iphdr);
-    struct sockaddr_in target_addr;
-
-    memset(datagram, 0, BUFLEN);
-    // Set appropriate fields in headers
-    setup_ip_header(iph, 0, 0, 0);
-    setup_udp_header(udph, 0, 0, 0);
-    char *data = (char *)udph + sizeof(struct udphdr);
-
-#if defined(LOG_ERROR) || defined(DEBUG_SOCKETS)
-    char addrbuf0[INET6_ADDRSTRLEN];
-    char addrbuf1[INET6_ADDRSTRLEN];
-#endif
-
-#if defined(USE_SELECT_READ) || defined(USE_SELECT_WRITE)
-    fd_set rfds;
-    fd_set wfds;
-    struct timeval tv;
-    int retval;
-    FD_ZERO(&rfds);
-    FD_ZERO(&wfds);
-#endif
-
-    while (run_flag) {
 #ifdef USE_SELECT_READ
         tv.tv_sec = 0;
         tv.tv_usec = 100000;
@@ -796,28 +752,33 @@ void *tee(void *arg0) {
 
         data[numbytes] = '\0';
 
-#ifdef DEBUG_SOCKETS
-        fprintf(stderr, "%lu - listener %d: got packet from %s:%u\n",
-            time(NULL),
-            td->thread_id,
-            get_ip(&(source_addr), addrbuf0),
-            get_port(&(source_addr)));
-        fprintf(stderr, "%lu - listener %d: packet is %d bytes long\n", time(NULL), td->thread_id, numbytes);
-        fprintf(stderr, "%lu - listener %d: packet contains \"%s\"\n", time(NULL), td->thread_id, data);
-        fprintf(stderr, "%lu - listener %d: crafting new packet...\n", time(NULL), td->thread_id);
-#endif
-
-        // check whether features->duplicate == 1
-        // if yes, iterate over remaining targets and also send packets to them
         for (cnt=0; cnt < td->num_targets; cnt++) {
-
-            target_addr = *(struct sockaddr_in*)&(td->targets[cnt].dest);
-            update_udp_header(udph, numbytes, ((struct sockaddr_in*)&source_addr)->sin_port, target_addr.sin_port);
-            update_ip_header(iph, sizeof(struct udphdr) + numbytes,
-                            ((struct sockaddr_in*)&source_addr)->sin_addr.s_addr,
-                            target_addr.sin_addr.s_addr);
+            // callback packet process
+            switch (opcode) {
+                case OPCODE_LOAD_BALANCE:
+                    target = cb_pkt_process_load_balance(
+                            td, &source_addr,
+                            numbytes, iph, udph,
+                            &ht_e);
+                    target_addr = (struct sockaddr_in*)&(target->dest);
+                    break;
+                case OPCODE_DUPLICATE:
+                    target_addr = (struct sockaddr_in*)&(td->targets[cnt].dest);
+                    cb_pkt_process_duplicate(
+                            target_addr,
+                            cnt, td, &source_addr,
+                            numbytes, iph, udph);
+                    break;
+            }
 
 #ifdef DEBUG_SOCKETS
+            fprintf(stderr, "%lu - listener %d: got packet from %s:%d\n",
+                time(NULL),
+                td->thread_id,
+                get_ip(&source_addr, addrbuf0),
+                get_port(&source_addr));
+            fprintf(stderr, "%lu - listener %d: packet is %d bytes long\n",
+                    time(NULL), td->thread_id, numbytes);
             fprintf(stderr, "%lu - listener %d: sending packet: %s:%u => %s:%u: len: %u\n",
                 time(NULL),
                 td->thread_id,
@@ -828,20 +789,26 @@ void *tee(void *arg0) {
                 iph->tot_len);
 #endif
 
+
 #ifdef USE_SELECT_WRITE
             do {
                 do {
                     tv.tv_sec = 0;
                     tv.tv_usec = 100000;
-                    FD_SET(td->targets[cnt].fd, &wfds);
-                    retval = select((td->targets[cnt].fd)+1, NULL, &wfds, NULL, &tv);
+                    FD_SET(target->fd, &wfds);
+                    retval = select((target->fd)+1, NULL, &wfds, NULL, &tv);
 
                     if (retval == -1)
                         perror("select()");
                 } while (retval <= 0);
 #endif
                 int32_t written;
-                if ((written = sendto(td->targets[cnt].fd, datagram, iph->tot_len, 0, (struct sockaddr *) &target_addr, sizeof(target_addr))) < 0) {
+                if ((written = sendto(
+                                target->fd,
+                                datagram,
+                                iph->tot_len, 0,
+                                (struct sockaddr *) target_addr,
+                                sizeof(*target_addr))) < 0) {
                     perror("sendto failed");
                     fprintf(stderr, "%lu - listener %d: error in write %s - %d\n",
                             time(NULL), td->thread_id, strerror(errno), errno);
@@ -850,6 +817,17 @@ void *tee(void *arg0) {
 #endif
                 }
                 else {
+
+                    // callback post packet send
+                    switch (opcode) {
+                        case OPCODE_LOAD_BALANCE:
+                            cb_post_pkt_send_load_balance(features, written, ht_e, target);
+                            break;
+                        case OPCODE_DUPLICATE:
+                            cb_post_pkt_send_duplicate();
+                            break;
+                    }
+
                     if ( written != iph->tot_len) {
                         // handle this short write - log and move on
 #ifdef LOG_ERROR
@@ -867,14 +845,27 @@ void *tee(void *arg0) {
 #ifdef USE_SELECT_WRITE
             } while (retval <= 0);
 #endif
-
+            // check whether features->duplicate == 1
+            // if yes, iterate over remaining targets and also send packets to them
             if (!(features->duplicate))
                 break;
         }
     }
+
 #ifdef LOG_INFO
-    fprintf(stderr, "%lu - [listener-%u] shutting down\n", time(NULL), td->thread_id);
+    fprintf(stderr, "%lu - [listener %u] shutting down\n",
+            time(NULL), td->thread_id);
 #endif
+    // callback shutdown
+    switch (opcode) {
+        case OPCODE_LOAD_BALANCE:
+            if (hashtable != NULL)
+                cb_shutdown_load_balance(*hashtable, td);
+            break;
+        case OPCODE_DUPLICATE:
+            cb_shutdown_duplicate();
+            break;
+    }
     return NULL;
 }
 
@@ -1396,4 +1387,3 @@ void sig_handler_ignore(int signum) {
             time(NULL), signum);
 #endif
 }
-

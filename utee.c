@@ -236,14 +236,7 @@ int main(int argc, char *argv[]) {
 
     // this one loops over all threads and starts them
     for (cnt = 0; cnt < num_threads; cnt++) {
-        switch (mode) {
-            case 'r':
-                pthread_create(&thread[cnt], NULL, &demux, (void *) &tds[cnt]);
-            break;
-            case 'd':
-                pthread_create(&thread[cnt], NULL, &tee, (void *) &tds[cnt]);
-            break;
-        }
+        pthread_create(&thread[cnt], NULL, &tee, (void *) &tds[cnt]);
     }
 
 #ifdef LOG_INFO

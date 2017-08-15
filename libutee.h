@@ -64,6 +64,9 @@
   #define MD5_SUM "<unknown>"
 #endif
 
+#define OPCODE_LOAD_BALANCE 0
+#define OPCODE_DUPLICATE 1
+
 /*
  * TODO:
  * * implement full IPv6 support
