@@ -32,6 +32,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -45,6 +46,8 @@
 #include <sys/ioctl.h>
 #include <linux/sockios.h>
 #include <sys/select.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
 #include <time.h>
 
 #include "libutee.h"
@@ -53,6 +56,15 @@
  * TODO:
  * * implement full IPv6 support
  */
+
+#if defined(LOG_INFO)
+#undef uthash_noexpand_fyi
+#define uthash_noexpand_fyi(tbl) fprintf(stderr,"%lu - warning: bucket expansion inhibited\n", \
+        time(NULL))
+#undef uthash_expand_fyi
+#define uthash_expand_fyi(tbl) fprintf(stderr,"%lu - expanding to %d buckets\n", \
+        time(NULL), tbl->num_buckets)
+#endif
 
 void usage(int argc, char *argv[]) {
     fprintf(stderr, "usage: %s -l <listenaddr:port> -m <r|d> -n <num_threads> "
@@ -165,7 +177,7 @@ int main(int argc, char *argv[]) {
         case 'i':
             threshold = strtoul(optarg, NULL, 10);
 #ifdef LOG_INFO
-            fprintf(stderr, "%lu - load balance every: %lu bytes\n",
+            fprintf(stderr, "%lu - load balance every: %lu packets\n",
                     time(NULL), threshold);
 #endif
         break;

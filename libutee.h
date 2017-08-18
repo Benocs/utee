@@ -42,12 +42,9 @@
 #include <netinet/udp.h>
 #include <arpa/inet.h>
 #include <netdb.h>
-#include <signal.h>
-#include <pthread.h>
 #include <sys/ioctl.h>
 #include <linux/sockios.h>
 #include <sys/select.h>
-#include <time.h>
 
 #include "smp.h"
 #include "uthash.h"

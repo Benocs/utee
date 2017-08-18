@@ -118,6 +118,8 @@ void setup_udp_header(struct udphdr *udph, uint16_t udp_payload_len,
     update_udp_header(udph, udp_payload_len, source, dest);
 }
 
+/************************ hash-based load balance methods ********************/
+
 // TODO: this is not IPv6 safe
 uint64_t create_ht_key_from_addr(struct sockaddr_storage* addr) {
     if (addr->ss_family == AF_INET) {
@@ -507,14 +509,12 @@ struct s_hashable** cb_pre_pkt_read_load_balance(struct s_thread_data *td) {
         fprintf(stderr, "%lu - listener %d: new master hash map available (%lu)\n",
                 time(NULL), td->thread_id, atomic_read(&master_hashtable_idx));
 #endif
-
         // set next hashtable
         td->hashtable_ro_old = td->hashtable;
         td->hashtable = td->hashtable_ro;
         td->hashtable_ro = NULL;
         hashtable = &(td->hashtable);
         atomic_set(&(td->last_used_master_hashtable_idx), atomic_read(&master_hashtable_idx));
-        smp_mb__after_atomic();
 
 #ifdef DEBUG_VERBOSE
         // print hashtable of thread 0 (they're all the same)
@@ -526,6 +526,7 @@ struct s_hashable** cb_pre_pkt_read_load_balance(struct s_thread_data *td) {
         }
 #endif
     }
+    smp_mb__after_atomic();
 
     return hashtable;
 }
@@ -550,6 +551,10 @@ struct s_target*  cb_pkt_process_load_balance(
 #if defined ENABLE_IPV6
 #else
         struct sockaddr_in *target_addr;
+#endif
+
+#if defined(HASH_DEBUG) || defined(LOAD_BALANCE_DEBUG)
+    char addrbuf0[INET6_ADDRSTRLEN];
 #endif
 
     if (features->hash_based_dist || features->load_balanced_dist) {
@@ -656,6 +661,8 @@ void cb_shutdown_load_balance(
 void cb_shutdown_duplicate(void) {
 }
 
+/************************ packet loop ****************************************/
+
 void *tee(void *arg0) {
     struct s_thread_data *td = (struct s_thread_data *)arg0;
     struct s_features *features = &(td->features);
@@ -695,7 +702,7 @@ void *tee(void *arg0) {
 
     uint16_t cnt;
 
-#if defined(DEBUG) || defined(LOG_ERROR) || defined(DEBUG_SOCKETS)
+#if defined(DEBUG) || defined(LOG_ERROR) || defined(DEBUG_SOCKETS) || defined(DEBUG_DEDUPLICATION)
     char addrbuf0[INET6_ADDRSTRLEN];
 #endif
 #if defined(DEBUG) || defined(HASH_DEBUG) || defined(LOG_ERROR) || defined(DEBUG_SOCKETS)
@@ -789,7 +796,6 @@ void *tee(void *arg0) {
                 get_port4_uint(udph->dest),
                 iph->tot_len);
 #endif
-
 
 #ifdef USE_SELECT_WRITE
             do {
@@ -1068,10 +1074,12 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
     uint8_t invalidated_targets[MAXTHREADS];
     uint8_t found_first_valid_target = 0;
 
-#if defined(DEBUG) || defined(LOG_INFO)
+#if defined(DEBUG) || defined(LOAD_BALANCE_INFO)
     char addrbuf0[INET6_ADDRSTRLEN];
     char addrbuf1[INET6_ADDRSTRLEN];
+#if defined(LOAD_BALANCE_INFO)
     char addrbuf2[INET6_ADDRSTRLEN];
+#endif
 #endif
 
     // NOTE: from s_hashable, the hitter-stats can be extracted
@@ -1141,7 +1149,7 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
         global_total_cnt += atomic_read(&(s->itemcnt));
     }
 
-#if defined(LOG_INFO)
+#if defined(LOAD_BALANCE_INFO)
     // only print stats if there were any forwarded items since last optimization iteration
     if (tot_cnt) {
         fprintf(stderr, "%lu - lb cnt stats. ideal=%.4f thresh=[%.4f, %.4f] "
@@ -1231,7 +1239,7 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
         if (!hit_reordering_threshold)
             break;
 
-#if defined(LOG_INFO)
+#if defined(LOAD_BALANCE_INFO)
         fprintf(stderr, "%lu - optimization iteration: %u of max %u\n",
                 time(NULL), itcnt+1, MAXOPTIMIZATIONITERATIONS);
 #endif
@@ -1260,7 +1268,7 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
         if (! excess_items)
             break;
 
-#if defined(LOG_INFO)
+#if defined(LOAD_BALANCE_INFO)
         fprintf(stderr, "%lu - line diff: %lu - min(%u): %lu, max(%u): %lu, trying to shift up to %lu bytes\n",
                 time(NULL),
                 excess_items,
@@ -1280,7 +1288,7 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
             invalidated_targets[target_max_idx] = 1;
         }
         else {
-#if defined(LOG_INFO)
+#if defined(LOAD_BALANCE_INFO)
             fprintf(stderr, "%lu - moving high hitter: %s:%u from: %s:%u (%p) to %s:%u (%p) (count: %lu)\n",
                 time(NULL),
                 get_ip(&(ht_e_best->source), addrbuf0),
@@ -1344,8 +1352,10 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
     for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
         atomic_set(&(tds[0].targets[cnt].itemcnt), 0);
     }
+#if defined(LOAD_BALANCE_INFO)
     fprintf(stderr, "\n%lu ===================================================\n",
             time(NULL));
+#endif
 
     smp_mb__after_atomic();
     ht_delete_all(*master_hashtable);
