@@ -22,6 +22,7 @@ MD5_SUM=\"$(mkdir tmp_md5 && cp ${SOURCE} tmp_md5 && \
 #
 # enable info-level logging
 #
+#log_flags="-DLOG_INFO -DLOG_WARN -DLOG_ERROR -DLOAD_BALANCE_INFO"
 log_flags="-DLOG_INFO -DLOG_WARN -DLOG_ERROR"
 
 #
@@ -39,13 +40,15 @@ extraflags="-DUSE_SELECT_WRITE -DRCV_ON_RAW"
 #
 # debug flags
 #
-#debugflags=
+debugflags=
 #debugflags="-DDEBUG"
 #debugflags="-DDEBUG -DDEBUG_VERBOSE"
 #debugflags="-DDEBUG -DDEBUG_VERBOSE -DHASH_DEBUG -DDEBUG_SOCKETS"
 #debugflags="-DDEBUG -DDEBUG_VERBOSE -DHASH_DEBUG -DDEBUG_SOCKETS -DLOAD_BALANCE_DEBUG"
+#debugflags="-DDEBUG -DDEBUG_VERBOSE -DHASH_DEBUG -DDEBUG_SOCKETS -DLOAD_BALANCE_DEBUG -DDEBUG_DEDUPLICATION"
 
-debugflags="-DLOAD_BALANCE_DEBUG"
+#debugflags="-DLOAD_BALANCE_DEBUG -DDEBUG_DEDUPLICATION -DHASH_DEBUG"
+#debugflags="-DDEBUG -DDEBUG_DEDUPLICATION -DDEDUPLICATION_HASH_DEBUG"
 
 #
 # (debug) build
