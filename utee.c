@@ -1,6 +1,6 @@
 /* utee - transparent udp tee proxy
  *
- * Copyright (C) 2016 Benocs
+ * Copyright (C) 2016-2017 Benocs
  * Author: Robert Wuttke <robert@benocs.com>
  *
  * This program is free software; you can redistribute it and/or
@@ -21,6 +21,7 @@
  *  * round-robin load-balance
  *  ** hash-based load-balance
  *  * duplicate/relay
+ *  * packet deduplication in addition to either load-balance or duplicate
  *
  * based on:
  *  * http://pastebin.com/CG8zscaA (Spoofed UDP Flooder v2.5.3 FINAL by ohnoes1479)
