@@ -69,6 +69,9 @@
  * * implement full IPv6 support
  */
 
+#define DEDUP_HT_SIZE 1031
+// TODO: have switch. increase either when almost full or when collision was detected
+
 #define BUFLEN 4096
 #define MAXTHREADS 1024
 #define MAXOPTIMIZATIONITERATIONS 500
@@ -127,6 +130,7 @@ struct s_features {
     uint8_t hash_based_dist;
     uint8_t duplicate;
     uint8_t lb_bytecnt_based;
+    uint8_t deduplicate;
 };
 
 struct s_hashable {
@@ -139,17 +143,46 @@ struct s_hashable {
     UT_hash_handle hh;
 };
 
+typedef struct {
+    // TODO: this is not IPv6 safe
+    uint32_t addr;
+    uint16_t port;
+    // TODO: add support for more id bits
+    uint32_t id;
+} t_deduplication_hashable_key;
+
+typedef struct {
+    // NOTE: this might either be time or packets
+    atomic_t timestamp_pkt_seen;
+    // NOTE: this is a unique value identifying the current packet
+    atomic_t value;
+} t_deduplication_inner_hashable_value;
+
+struct s_deduplication_hashable {
+    t_deduplication_hashable_key key;
+    t_deduplication_inner_hashable_value inner_ht[DEDUP_HT_SIZE];
+
+    UT_hash_handle hh;
+};
+
+typedef struct {
+        uint32_t deduplication_timeout;
+} t_feature_settings;
+
 struct s_thread_data {
     int thread_id;
     int sockfd;
     struct s_target* targets;
     uint32_t num_targets;
     struct s_features features;
+    t_feature_settings feature_settings;
     struct s_hashable* hashtable;
     struct s_hashable* hashtable_ro;
     struct s_hashable* hashtable_ro_old;
 
     atomic_t last_used_master_hashtable_idx;
+
+    struct s_deduplication_hashable** deduplication_hashtable;
 };
 
 unsigned short checksum (unsigned short *buf, int nwords);
@@ -209,8 +242,21 @@ void ht_reset_counters(struct s_hashable *ht);
 
 void ht_delete_all(struct s_hashable *ht);
 
-void *demux(void *arg0);
+/************************ deduplication hashtable methods ********************/
+struct s_deduplication_hashable* dedup_ht_get(
+        struct s_deduplication_hashable **ht,
+        t_deduplication_hashable_key *key);
 
+struct s_deduplication_hashable* dedup_ht_get_add(
+        struct s_deduplication_hashable **ht,
+        t_deduplication_hashable_key *key,
+        atomic_t now,
+        uint8_t overwrite);
+
+void dedup_ht_delete_all(struct s_deduplication_hashable *ht);
+/************************ packet callbacks ***********************************/
+
+/************************ packet loop ****************************************/
 void *tee(void *arg0);
 
 int setsocksize(int s, int level, int optname, void *optval, socklen_t optlen);
@@ -230,6 +276,14 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
         uint64_t threshold, double reorder_threshold,
         struct s_hashable** master_hashtable);
 
+uint8_t deduplicate(struct s_thread_data* td,
+                struct sockaddr_storage* source_addr,
+                struct iphdr *iph,
+                struct udphdr *udph,
+                char* data,
+                int numdatabytes,
+                atomic_t now);
+
 void sig_handler_toggle_optional_output(int signum);
 void sig_handler_shutdown(int signum);
 void sig_handler_ignore(int signum);
@@ -241,7 +295,11 @@ extern volatile uint8_t run_flag;
 extern struct s_thread_data tds[MAXTHREADS];
 extern uint16_t num_threads;
 
-extern struct s_hashable* master_hashtable_ro;
 extern atomic_t master_hashtable_idx;
+// notion of time.
+// either represented by seconds since epoch or by packets since program start
+extern atomic_t now;
+
+extern pthread_rwlock_t deduplication_lock;
 
 #endif /* __LIBUTEE_H_ */

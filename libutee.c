@@ -57,6 +57,8 @@ struct s_thread_data tds[MAXTHREADS];
 uint16_t num_threads = 0;
 
 atomic_t master_hashtable_idx;
+atomic_t now;
+pthread_rwlock_t deduplication_lock;
 
 /*
  * TODO:
@@ -490,7 +492,152 @@ void ht_delete_all(struct s_hashable *ht) {
     ht = NULL;
 }
 
-struct s_hashable** cb_pre_pkt_read_load_balance(struct s_thread_data *td) {
+/************************ deduplication hashtable methods ********************/
+
+struct s_deduplication_hashable* dedup_ht_get(
+        struct s_deduplication_hashable **ht,
+        t_deduplication_hashable_key* key) {
+    struct s_deduplication_hashable *ht_e = NULL;
+
+    if (pthread_rwlock_rdlock(&deduplication_lock) != 0) {
+        fprintf(stderr,"%lu - cannot acquire read lock\n", time(NULL));
+        return NULL;
+    }
+
+    HASH_FIND(hh, *ht, key, sizeof(t_deduplication_hashable_key), ht_e);
+#if defined(DEDUPLICATION_HASH_DEBUG)
+    if (ht_e == NULL) {
+        fprintf(stderr, "%lu - ht: item not found. ht: %x\n", time(NULL), *ht);
+    }
+    else {
+        fprintf(stderr, "%lu - ht: item found\n", time(NULL));
+    }
+#endif
+
+    pthread_rwlock_unlock(&deduplication_lock);
+
+    return ht_e;
+}
+
+struct s_deduplication_hashable* dedup_ht_get_add(
+        struct s_deduplication_hashable **ht,
+        t_deduplication_hashable_key *key,
+        atomic_t now,
+        uint8_t overwrite) {
+    struct s_deduplication_hashable *ht_e = NULL;
+
+    ht_e = dedup_ht_get(ht, key);
+
+    if (ht_e == NULL) {
+#if defined(DEDUPLICATION_HASH_DEBUG)
+        fprintf(stderr, "%lu - ht: item not found. adding. ht: %x\n", time(NULL), *ht);
+#endif
+        if (pthread_rwlock_wrlock(&deduplication_lock) != 0) {
+            fprintf(stderr,"%lu - cannot acquire write lock\n", time(NULL));
+            return NULL;
+        }
+
+        if ((ht_e = (struct s_deduplication_hashable*)
+                    malloc(sizeof(struct s_deduplication_hashable))) == NULL) {
+            perror("allocate new hashtable element");
+            fprintf(stderr, "%lu - cannot allocate new hashtable element\n",
+                    time(NULL));
+            return NULL;
+        }
+        memset(ht_e, 0, sizeof(struct s_deduplication_hashable));
+        ht_e->key.addr = key->addr;
+        ht_e->key.port = key->port;
+        ht_e->key.id = key->id;
+
+        HASH_ADD(hh, *ht, key, sizeof(t_deduplication_hashable_key), ht_e);
+
+        pthread_rwlock_unlock(&deduplication_lock);
+    }
+    /*
+    else if (overwrite) {
+        smp_mb__before_atomic();
+        atomic_set(&(ht_e->timestamp_pkt_seen), atomic_read(&now));
+        smp_mb__after_atomic();
+
+#if defined(DEDUPLICATION_HASH_DEBUG)
+        fprintf(stderr, "%lu - ht: item found. overwriting\n", time(NULL));
+#endif
+    }
+#if defined(DEDUPLICATION_HASH_DEBUG)
+    else {
+        fprintf(stderr, "%lu - ht: item found. not overwriting. last_seen: %lu\n",
+            time(NULL),
+            atomic_read(&(ht_e->timestamp_pkt_seen)));
+    }
+#endif
+    */
+
+    return ht_e;
+}
+
+void dedup_ht_delete_all(struct s_deduplication_hashable *ht) {
+    struct s_deduplication_hashable *s, *tmp;
+
+    if (pthread_rwlock_wrlock(&deduplication_lock) != 0) {
+        fprintf(stderr,"%lu - cannot acquire write lock\n", time(NULL));
+        return;
+    }
+    HASH_ITER(hh, ht, s, tmp) {
+        HASH_DEL(ht, s);
+        free(s);
+    }
+    fprintf(stderr, "done iteration dedup hashtable\n");
+    free(ht);
+    fprintf(stderr, "done freein ht\n");
+
+    //ht = NULL;
+    pthread_rwlock_unlock(&deduplication_lock);
+}
+
+// TODO: this is not IPv6 safe
+uint8_t dedup_create_ht_key(
+        t_deduplication_hashable_key* key,
+        struct sockaddr_storage* addr,
+        char* data,
+        int numdatabytes,
+        uint16_t id_idx
+        ) {
+
+    if (addr->ss_family == AF_INET) {
+        key->addr = ntohl(((struct sockaddr_in*)addr)->sin_addr.s_addr);
+        key->port = ntohs(((struct sockaddr_in *)addr)->sin_port);
+    }
+    else {
+        key->addr = 0;
+        key->port = ntohs(((struct sockaddr_in6 *)addr)->sin6_port);
+    }
+
+    if (numdatabytes > id_idx) {
+        key->id = ntohl(((uint32_t*)data)[id_idx]);
+    }
+    else {
+        key->id = 0;
+    }
+
+    return 0;
+}
+
+void dedup_ht_iterate(struct s_deduplication_hashable *ht) {
+    struct s_deduplication_hashable *s;
+
+    for(s=ht; s != NULL; s=s->hh.next) {
+        fprintf(stderr, "%lu - ht_iter: key: (%u, %u, %u)\n",
+            time(NULL),
+            s->key.addr,
+            s->key.port,
+            s->key.id);
+    }
+}
+/************************ packet callbacks ***********************************/
+
+struct s_hashable** cb_pre_pkt_read_load_balance(
+        struct s_thread_data *td,
+        struct s_hashable** hashtable) {
     smp_mb__before_atomic();
 
 
@@ -531,6 +678,23 @@ struct s_hashable** cb_pre_pkt_read_load_balance(struct s_thread_data *td) {
 }
 
 void cb_pre_pkt_read_duplicate(void) {
+}
+
+uint8_t cb_deduplicate_load_balance(
+        struct s_thread_data *td,
+        struct sockaddr_storage* source_addr,
+        struct iphdr *iph,
+        struct udphdr *udph,
+        char* data,
+        int numdatabytes,
+        atomic_t now) {
+    return deduplicate(td, source_addr, iph, udph, data, numdatabytes, now);
+}
+
+uint8_t cb_deduplicate_duplicate(void) {
+    uint8_t drop_pkt = 0;
+
+    return drop_pkt;
 }
 
 struct s_target*  cb_pkt_process_load_balance(
@@ -721,6 +885,9 @@ void *tee(void *arg0) {
     FD_ZERO(&wfds);
 #endif
 
+    // flag to denote whether to drop a duplicate packet
+    uint8_t dedup_drop_pkt = 0;
+
     while (run_flag) {
 
         // callback pre packet read
@@ -760,8 +927,37 @@ void *tee(void *arg0) {
 #endif
             numbytes = 1472;
         }
-
         data[numbytes] = '\0';
+
+        smp_mb__before_atomic();
+        // use packet counter as time
+        // atomic_inc(&now);
+        // use wall clock as time
+        atomic_set(&now, time(NULL));
+        smp_mb__after_atomic();
+
+        if (td->features.deduplicate) {
+            // callback packet deduplicate / post receive
+            switch (opcode) {
+                case OPCODE_LOAD_BALANCE:
+                    dedup_drop_pkt = cb_deduplicate_load_balance(
+                            td, &source_addr, iph, udph, data, numbytes, now);
+                    break;
+                case OPCODE_DUPLICATE:
+                    dedup_drop_pkt = cb_deduplicate_duplicate();
+                    break;
+            }
+
+            if (dedup_drop_pkt) {
+#ifdef DEBUG_DEDUPLICATION
+                fprintf(stderr, "%lu - listener %d: dropping duplicate packet from %s:%u\n",
+                        time(NULL), td->thread_id,
+                        get_ip(&source_addr, addrbuf0),
+                        get_port(&source_addr));
+#endif
+                continue;
+            }
+        }
 
         for (cnt=0; cnt < td->num_targets; cnt++) {
             // callback packet process
@@ -1400,4 +1596,172 @@ void sig_handler_ignore(int signum) {
     fprintf(stderr, "%lu - [signal] ignoring signal: %d\n",
             time(NULL), signum);
 #endif
+}
+
+uint16_t hash_packet() {
+    return 0;
+}
+
+uint8_t deduplicate(struct s_thread_data* td,
+        struct sockaddr_storage* source_addr,
+        struct iphdr *iph,
+        struct udphdr *udph,
+        char* data,
+        int numdatabytes,
+        atomic_t now) {
+    uint8_t drop_pkt = 0;
+
+    struct s_deduplication_hashable** deduplication_hashtable = td->deduplication_hashtable;
+
+    // TODO: implement hash-based deduplication
+    // TODO: introduce cfg. limits like time or number of packets to track
+    // TODO: create lock-free concept to get the hashmap thread-safe
+    //
+    // TODO: ip,port-tuple is not sufficient as this would match the entire flow from one exporter
+    // TODO: ==> hash entire pkt and compare hash?
+    // TODO: from header only include protocol (udp), src-ip, src-port
+    // TODO: have switch which states which first n bytes to hash
+
+    // TODO: get hash of key
+    t_deduplication_hashable_key key;
+    // TODO: get threshold / timeout from user
+    uint32_t timeout = td->feature_settings.deduplication_timeout;
+    struct s_deduplication_hashable *ht_e = NULL;
+
+    uint32_t pkt_id;
+    uint32_t pkt_idx;
+
+    uint64_t tnow;
+
+    //uint64_t pkt_seen;
+
+    uint16_t id_idx = 3;
+    memset(&key, 0, sizeof(t_deduplication_hashable_key));
+    dedup_create_ht_key(&key, source_addr, data, numdatabytes, id_idx);
+
+
+    smp_mb__before_atomic();
+    tnow = atomic_read(&now);
+    smp_mb__after_atomic();
+
+#if defined(DEBUG_DEDUPLICATION)
+    char addrbuf0[INET6_ADDRSTRLEN];
+    fprintf(stderr, "\n");
+    fprintf(stderr, "%lu - deduplicate. now: %lu, source: %s:%u@%u, key: (%u, %u, %u)\n",
+            time(NULL),
+            tnow,
+            get_ip(source_addr, addrbuf0),
+            get_port(source_addr),
+            key.id,
+            key.addr,
+            key.port,
+            key.id);
+#endif
+
+    /* check whether source ip:port,packet identifiers is in hashmap
+     *   if no, add it.
+     *   if yes, check whether it is stale (timeout)
+     *     if yes, overwrite it
+     *     if no, set drop_pkt=1 to signal down stream that this is a potential
+     *       duplicate
+     */
+    ht_e = dedup_ht_get(deduplication_hashtable, &key);
+    if (ht_e == NULL) {
+#if defined(DEBUG_DEDUPLICATION)
+        fprintf(stderr, "%lu - found new source. adding it to deduplication hashmap\n",
+                time(NULL));
+#endif
+        ht_e = dedup_ht_get_add(deduplication_hashtable, &key, now, 1);
+    }
+    /*
+    else {
+        smp_mb__before_atomic();
+        pkt_seen =  atomic_read(&(ht_e->timestamp_pkt_seen));
+        smp_mb__after_atomic();
+#if defined(DEBUG_DEDUPLICATION)
+        fprintf(stderr, "%lu - found active source. timestamp_pkt_seen: %lu\n",
+                time(NULL), pkt_seen);
+#endif
+        // TODO: XXX: this check and thus the ts in this datastructure is useless, isn't it?
+        // TODO: time instead of packets - dynamically increasal of the array
+        if (pkt_seen > (tnow + timeout)) {
+#if defined(DEBUG_DEDUPLICATION)
+            fprintf(stderr, "%lu - found stale source. overwriting it\n",
+                    time(NULL));
+#endif
+            ht_e = dedup_ht_get_add(deduplication_hashtable, &key, now, 1);
+        }
+    }
+    */
+
+#if defined(DEBUG_DEDUPLICATION)
+    fprintf(stderr, "%lu - len(deduplication_hashtable): %u, now: %lu\n",
+            time(NULL), HASH_COUNT(*deduplication_hashtable), tnow);
+#endif
+
+    /* check whether packet identifiers exist in 'hashmap'
+     *   if no, add them
+     *   if yes, check whether they are stale (timeout)
+     *     if yes, overwrite them and forward packet
+     *     if no, keep drop_pkt==1 and thus drop packet
+     */
+    // seqnum
+    pkt_id = ntohl(((uint32_t*)data)[2]);
+    pkt_idx = pkt_id % DEDUP_HT_SIZE;
+
+    smp_mb__before_atomic();
+#if defined(DEBUG_DEDUPLICATION)
+    fprintf(stderr, "%lu - packet identifier(seqnum): %u, idx: %u, last_seen: %lu, existing value(seqnum): %lu\n",
+            time(NULL),
+            pkt_id,
+            pkt_idx,
+            atomic_read(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen)),
+            atomic_read(&(ht_e->inner_ht[pkt_idx].value)));
+#endif
+
+    if (atomic_read(&(ht_e->inner_ht[pkt_idx].value)) &&
+            ((atomic_read(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen)) + timeout) >= tnow) &&
+            pkt_id != atomic_read(&(ht_e->inner_ht[pkt_idx].value))) {
+        fprintf(stderr, "%lu - ERROR packet identifier and value do not match: id: %u, value: %lu\n",
+                time(NULL),
+                pkt_id,
+                atomic_read(&(ht_e->inner_ht[pkt_idx].value)));
+    }
+    if (! atomic_read(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen))) {
+        drop_pkt = 0;
+#if defined(DEBUG_DEDUPLICATION)
+        fprintf(stderr, "%lu - found new packet. adding it\n", time(NULL));
+#endif
+    }
+    else if ((atomic_read(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen)) + timeout) < tnow) {
+        drop_pkt = 0;
+#if defined(DEBUG_DEDUPLICATION)
+        fprintf(stderr, "%lu - found stale packet. overwriting it\n", time(NULL));
+#endif
+    }
+    else {
+#if defined(LOG_INFO)
+#ifndef DEBUG_DEDUPLICATION
+    char addrbuf0[INET6_ADDRSTRLEN];
+    fprintf(stderr, "%lu - deduplicate. now: %lu, last_seen: %lu, source: %s:%u@%u, key: (%u, %u, %u)\n",
+            time(NULL),
+            tnow,
+            atomic_read(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen)),
+            get_ip(source_addr, addrbuf0),
+            get_port(source_addr),
+            key.id,
+            key.addr,
+            key.port,
+            key.id);
+#endif
+        fprintf(stderr, "%lu - found active duplicate. dropping packet\n",
+                time(NULL));
+#endif
+    }
+    atomic_set(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen), tnow);
+    atomic_set(&(ht_e->inner_ht[pkt_idx].value), pkt_id);
+
+    smp_mb__after_atomic();
+
+    return drop_pkt;
 }

@@ -94,11 +94,15 @@ int main(int argc, char *argv[]) {
     uint8_t loadbalanced_dist_enabled = 0;
     uint8_t hash_based_dist_enabled = 0;
 
+    uint8_t deduplication_enabled = 0;
+    uint32_t deduplication_timeout = 10;
+
     // load balance based on paket counts if 0
     // load balance based on byte counts if 1
     uint8_t loadbalance_bytecnt_based = 0;
 
     struct s_hashable* master_hashtable = NULL;
+    struct s_deduplication_hashable* deduplication_hashtable = NULL;
 
     // default: load balance every 50e6 lines, min difference between targets: 10%
     uint64_t threshold = 50e6;
@@ -115,7 +119,7 @@ int main(int argc, char *argv[]) {
     smp_mb__after_atomic();
 
     opterr = 0;
-    while ((c = getopt (argc, argv, "l:m:n:i:t:LHb")) != -1)
+    while ((c = getopt (argc, argv, "d:l:m:n:i:t:DLHb")) != -1)
     switch (c) {
         case 'l':
             split_addr(optarg, listenaddr, &listenport);
@@ -136,6 +140,20 @@ int main(int argc, char *argv[]) {
 #ifdef LOG_INFO
             fprintf(stderr, "%lu - use load-balancing while distributing\n",
                     time(NULL));
+#endif
+        break;
+        case 'D':
+            deduplication_enabled = 1;
+#ifdef LOG_INFO
+            fprintf(stderr, "%lu - deduplicate incoming stream\n",
+                    time(NULL));
+#endif
+        break;
+        case 'd':
+            deduplication_timeout = strtoul(optarg, NULL, 10);
+#ifdef LOG_INFO
+            fprintf(stderr, "%lu - deduplicate timeout: %u seconds\n",
+                    time(NULL), deduplication_timeout);
 #endif
         break;
         case 'b':
@@ -229,6 +247,8 @@ int main(int argc, char *argv[]) {
         tds[cnt].hashtable = NULL;
         atomic_set(&(tds[cnt].last_used_master_hashtable_idx), 0);
 
+        tds[cnt].deduplication_hashtable = &deduplication_hashtable;
+
         switch (mode) {
             case 'r':
                 tds[cnt].features.distribute = 1;
@@ -241,11 +261,23 @@ int main(int argc, char *argv[]) {
                 optional_output_enabled = 1;
             break;
         }
+        tds[cnt].features.deduplicate = deduplication_enabled;
+        tds[cnt].feature_settings.deduplication_timeout = deduplication_timeout;
     }
     smp_mb__after_atomic();
 
+    // initialize 'time'
+    atomic_set(&now, 0);
+
     // set all targets
     init_sending_sockets(targets, argc - optind, &(argv[optind]), pipe_size);
+
+    if (deduplication_enabled) {
+        if (pthread_rwlock_init(&deduplication_lock, NULL) != 0) {
+            fprintf(stderr,"%lu - lock init failed\n", time(NULL));
+            exit(-1);
+        }
+    }
 
     // this one loops over all threads and starts them
     for (cnt = 0; cnt < num_threads; cnt++) {
@@ -264,6 +296,7 @@ int main(int argc, char *argv[]) {
                     &master_hashtable);
         }
 
+        // TODO: check whether to delete old values from deduplication_hashtable
         sleep(1);
     }
 #ifdef LOG_INFO
@@ -277,5 +310,6 @@ int main(int argc, char *argv[]) {
     }
 
     ht_delete_all(master_hashtable);
+    dedup_ht_delete_all(deduplication_hashtable);
     return 0;
 }
