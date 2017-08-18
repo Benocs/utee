@@ -493,7 +493,6 @@ void ht_delete_all(struct s_hashable *ht) {
 struct s_hashable** cb_pre_pkt_read_load_balance(struct s_thread_data *td) {
     smp_mb__before_atomic();
 
-    struct s_hashable** hashtable;
 
     if (atomic_read(&(td->last_used_master_hashtable_idx)) != atomic_read(&master_hashtable_idx)) {
 #ifdef DEBUG_VERBOSE
@@ -647,10 +646,13 @@ void cb_post_pkt_send_duplicate(void) {
 }
 
 void cb_shutdown_load_balance(
-        struct s_hashable* hashtable,
+        struct s_hashable** hashtable,
         struct s_thread_data* td) {
 
-    ht_delete_all(hashtable);
+    fprintf(stderr, "in cb_shutdown_load_balance\n");
+    if (!(hashtable == NULL)) {
+        ht_delete_all(*hashtable);
+    }
     ht_delete_all(td->hashtable_ro);
     // only try to delete old hashtable if it still has entries. otherwise
     // the master-thread has already deleted it (for us)
@@ -673,7 +675,8 @@ void *tee(void *arg0) {
     else if (features->duplicate)
         opcode = OPCODE_DUPLICATE;
 
-    struct s_hashable** hashtable;
+    struct s_hashable* hashtable = NULL;
+    struct s_hashable** hashtable_ptr = &hashtable;
     struct s_hashable* ht_e;
 
     // incoming packets
@@ -723,7 +726,7 @@ void *tee(void *arg0) {
         // callback pre packet read
         switch (opcode) {
             case OPCODE_LOAD_BALANCE:
-                hashtable = cb_pre_pkt_read_load_balance(td);
+                hashtable = cb_pre_pkt_read_load_balance(td, hashtable);
                 break;
             case OPCODE_DUPLICATE:
                 cb_pre_pkt_read_duplicate();
@@ -867,7 +870,7 @@ void *tee(void *arg0) {
     switch (opcode) {
         case OPCODE_LOAD_BALANCE:
             if (hashtable != NULL)
-                cb_shutdown_load_balance(*hashtable, td);
+                cb_shutdown_load_balance(hashtable, td);
             break;
         case OPCODE_DUPLICATE:
             cb_shutdown_duplicate();

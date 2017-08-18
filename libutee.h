@@ -130,6 +130,7 @@ struct s_features {
 };
 
 struct s_hashable {
+    // TODO: this is not IPv6 safe
     uint64_t key;
     struct sockaddr_storage source;
     struct s_target* target;
