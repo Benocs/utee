@@ -249,6 +249,8 @@ int main(int argc, char *argv[]) {
         tds[cnt].targets = targets;
         tds[cnt].num_targets = num_targets;
         tds[cnt].hashtable = NULL;
+        tds[cnt].hashtable_ro = NULL;
+        tds[cnt].hashtable_ro_old = NULL;
         atomic_set(&(tds[cnt].last_used_master_hashtable_idx), 0);
 
         tds[cnt].deduplication_hashtable = &deduplication_hashtable;

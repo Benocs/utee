@@ -909,8 +909,8 @@ void *tee(void *arg0) {
     else if (features->duplicate)
         opcode = OPCODE_DUPLICATE;
 
-    struct s_hashable* hashtable = NULL;
-    struct s_hashable** hashtable_ptr = &hashtable;
+    struct s_hashable* t = NULL;
+    struct s_hashable** hashtable = &t;
     struct s_hashable* ht_e;
 
     // incoming packets
