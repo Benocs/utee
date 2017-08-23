@@ -1727,12 +1727,9 @@ uint8_t deduplicate(struct s_thread_data* td,
 
     uint64_t tnow;
 
-    //uint64_t pkt_seen;
-
     uint16_t id_idx = 3;
     memset(&key, 0, sizeof(t_deduplication_hashable_key));
     dedup_create_ht_key(&key, source_addr, data, numdatabytes, id_idx);
-
 
     smp_mb__before_atomic();
     tnow = atomic_read(&now);
@@ -1767,26 +1764,6 @@ uint8_t deduplicate(struct s_thread_data* td,
 #endif
         ht_e = dedup_ht_get_add(deduplication_hashtable, &key, now, 1);
     }
-    /*
-    else {
-        smp_mb__before_atomic();
-        pkt_seen =  atomic_read(&(ht_e->timestamp_pkt_seen));
-        smp_mb__after_atomic();
-#if defined(DEBUG_DEDUPLICATION)
-        fprintf(stderr, "%lu - found active source. timestamp_pkt_seen: %lu\n",
-                time(NULL), pkt_seen);
-#endif
-        // TODO: XXX: this check and thus the ts in this datastructure is useless, isn't it?
-        // TODO: time instead of packets - dynamically increasal of the array
-        if (pkt_seen > (tnow + timeout)) {
-#if defined(DEBUG_DEDUPLICATION)
-            fprintf(stderr, "%lu - found stale source. overwriting it\n",
-                    time(NULL));
-#endif
-            ht_e = dedup_ht_get_add(deduplication_hashtable, &key, now, 1);
-        }
-    }
-    */
 
 #if defined(DEBUG_DEDUPLICATION)
     fprintf(stderr, "%lu - len(deduplication_hashtable): %u, now: %lu\n",
