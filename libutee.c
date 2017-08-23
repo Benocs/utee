@@ -1692,8 +1692,18 @@ void sig_handler_ignore(int signum) {
 #endif
 }
 
-uint16_t hash_packet() {
-    return 0;
+uint32_t get_dedup_inner_ht_packet_id(
+        char* data,
+        int numdatabytes) {
+    // seqnum
+    // TODO: get packet identifier idx and width from user
+    return ntohl(((uint32_t*)data)[2]);
+}
+
+uint32_t get_dedup_inner_ht_packet_idx(
+        uint32_t pkt_id,
+        uint32_t dedup_ht_size) {
+    return pkt_id % dedup_ht_size;
 }
 
 uint8_t deduplicate(struct s_thread_data* td,
@@ -1727,6 +1737,7 @@ uint8_t deduplicate(struct s_thread_data* td,
 
     uint64_t tnow;
 
+    // TODO: get packet id idx and width from user
     uint16_t id_idx = 3;
     memset(&key, 0, sizeof(t_deduplication_hashable_key));
     dedup_create_ht_key(&key, source_addr, data, numdatabytes, id_idx);
@@ -1776,9 +1787,9 @@ uint8_t deduplicate(struct s_thread_data* td,
      *     if yes, overwrite them and forward packet
      *     if no, keep drop_pkt==1 and thus drop packet
      */
-    // seqnum
-    pkt_id = ntohl(((uint32_t*)data)[2]);
-    pkt_idx = pkt_id % DEDUP_HT_SIZE;
+    pkt_id = get_dedup_inner_ht_packet_id(data, numdatabytes);
+    pkt_idx = get_dedup_inner_ht_packet_idx(
+            pkt_id, DEDUP_HT_SIZE);
 
     smp_mb__before_atomic();
 #if defined(DEBUG_DEDUPLICATION)
