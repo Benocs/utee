@@ -521,7 +521,7 @@ struct s_deduplication_hashable* dedup_ht_get(
     HASH_FIND(hh, *ht, key, sizeof(t_deduplication_hashable_key), ht_e);
 #if defined(DEDUPLICATION_HASH_DEBUG)
     if (ht_e == NULL) {
-        fprintf(stderr, "%lu - ht: item not found. ht: %x\n", time(NULL), *ht);
+        fprintf(stderr, "%lu - ht: item not found\n", time(NULL));
     }
     else {
         fprintf(stderr, "%lu - ht: item found\n", time(NULL));
@@ -544,7 +544,7 @@ struct s_deduplication_hashable* dedup_ht_get_add(
 
     if (ht_e == NULL) {
 #if defined(DEDUPLICATION_HASH_DEBUG)
-        fprintf(stderr, "%lu - ht: item not found. adding. ht: %x\n", time(NULL), *ht);
+        fprintf(stderr, "%lu - ht: item not found. adding\n", time(NULL));
 #endif
         if (pthread_rwlock_wrlock(&deduplication_lock) != 0) {
             fprintf(stderr,"%lu - cannot acquire write lock\n", time(NULL));
@@ -683,9 +683,20 @@ struct s_hashable** cb_pre_pkt_read_load_balance(
                 time(NULL), td->thread_id, atomic_read(&master_hashtable_idx));
 #endif
         // set next hashtable
+        if (! (td->hashtable_ro_old == NULL)) {
+            fprintf(stderr, "%lu - listener %d: ERROR td->hashtable_ro_old != NULL\n)",
+                    time(NULL), td->thread_id);
+
+        }
         td->hashtable_ro_old = td->hashtable;
         td->hashtable = td->hashtable_ro;
         td->hashtable_ro = NULL;
+#ifdef DEBUG
+        fprintf(stderr, "%lu - listener: %d: set td->hashtable_ro to NULL: %p\n",
+                time(NULL), td->thread_id, td->hashtable_ro);
+        fprintf(stderr, "%lu - listener: %d: td->hashtable_ro_old: %p\n",
+                time(NULL), td->thread_id, td->hashtable_ro_old);
+#endif
         hashtable = &(td->hashtable);
         atomic_set(&(td->last_used_master_hashtable_idx), atomic_read(&master_hashtable_idx));
 
@@ -840,15 +851,47 @@ void cb_shutdown_load_balance(
         struct s_hashable** hashtable,
         struct s_thread_data* td) {
 
-    fprintf(stderr, "in cb_shutdown_load_balance\n");
+#ifdef DEBUG
+    fprintf(stderr, "thread: %u, *hashtable: %p, td->hashtable_ro: %p, td->hashtable_ro_old: %p\n",
+            td->thread_id,
+            *hashtable,
+            td->hashtable_ro,
+            td->hashtable_ro_old);
+#endif
+
     if (!(hashtable == NULL)) {
-        ht_delete_all(*hashtable);
+#ifdef DEBUG
+        fprintf(stderr, "thread: %u in cb_shutdown_load_balance pre  ht_delete_all(hastable)           : %p\n",
+                td->thread_id, *hashtable);
+#endif
+        ht_delete_all(hashtable);
+#ifdef DEBUG
+        fprintf(stderr, "thread: %u in cb_shutdown_load_balance post ht_delete_all(hastable)           : %p\n",
+                td->thread_id, *hashtable);
+#endif
     }
-    ht_delete_all(td->hashtable_ro);
+#ifdef DEBUG
+    fprintf(stderr, "thread: %u in cb_shutdown_load_balance pre  ht_delete_all(td->hashtable_ro)    : %p\n",
+            td->thread_id, td->hashtable_ro);
+#endif
+    ht_delete_all(&(td->hashtable_ro));
+#ifdef DEBUG
+    fprintf(stderr, "thread: %u in cb_shutdown_load_balance post ht_delete_all(td->hashtable_ro)    : %p\n",
+            td->thread_id, td->hashtable_ro);
+#endif
     // only try to delete old hashtable if it still has entries. otherwise
     // the master-thread has already deleted it (for us)
-    if (!(td->hashtable_ro_old == NULL))
-        ht_delete_all(td->hashtable_ro_old);
+    if (!(td->hashtable_ro_old == NULL)) {
+#ifdef DEBUG
+        fprintf(stderr, "thread: %u in cb_shutdown_load_balance pre  ht_delete_all(td->hashtable_ro_old): %p\n",
+                td->thread_id, td->hashtable_ro_old);
+#endif
+        ht_delete_all(&(td->hashtable_ro_old));
+#ifdef DEBUG
+        fprintf(stderr, "thread: %u in cb_shutdown_load_balance post ht_delete_all(td->hashtable_ro_old): %p\n",
+                td->thread_id, td->hashtable_ro_old);
+#endif
+    }
 }
 
 void cb_shutdown_duplicate(void) {
@@ -1308,6 +1351,10 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
 #endif
 #endif
 
+#if defined(DEBUG_VERBOSE)
+    fprintf(stderr, "master_hashtable in load_balance(): %p\n", *master_hashtable);
+#endif
+
     // NOTE: from s_hashable, the hitter-stats can be extracted
     // NOTE: from s_target the output stats can be extracted
 
@@ -1337,7 +1384,7 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
     for (cnt = 0; cnt < num_threads; cnt++)
         invalidated_targets[cnt] = 0;
 
-#if defined(DEBUG)
+#if defined(DEBUG_VERBOSE)
     fprintf(stderr, "%lu - len(master_hashtable) before thread merging: %u\n",
             time(NULL), HASH_COUNT(*master_hashtable));
 #endif
@@ -1346,13 +1393,17 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
 #if defined(DEBUG)
         fprintf(stderr, "%lu - merging thread hash maps into master. thread: %u\n",
                 time(NULL), cnt);
+#if defined(DEBUG_VERBOSE)
+        fprintf(stderr, "%lu - len(thread_hashtable[%u]) before thread merging: %u\n",
+                time(NULL), cnt, HASH_COUNT(tds[cnt].hashtable));
+#endif
 #endif
 #if defined(LOG_ERROR)
         if (tds[cnt].hashtable == *master_hashtable)
             fprintf(stderr, "%lu - [ERR] master hash table is same as thread's %u table\n",
                     time(NULL), cnt);
 #endif
-#if defined(DEBUG)
+#if defined(DEBUG_VERBOSE)
         fprintf(stderr, "%lu - tds[%u].hashtable: %p - master: %p\n",
                 time(NULL), cnt, tds[cnt].hashtable, *master_hashtable);
 #endif
@@ -1364,9 +1415,12 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
                         atomic_read(&(s->itemcnt)), 1, 1);
             }
         }
+#if defined(DEBUG_VERBOSE)
+        fprintf(stderr, "master_hashtable after thread merging: %p\n", *master_hashtable);
+#endif
     }
 
-#if defined(DEBUG)
+#if defined(DEBUG_VERBOSE)
     fprintf(stderr, "%lu - len(master_hashtable) after thread merging: %u\n",
             time(NULL), HASH_COUNT(*master_hashtable));
 #endif
@@ -1567,26 +1621,36 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
         }
     } while(threads_reading_from_master);
 
+#if defined(DEBUG_VERBOSE)
+    fprintf(stderr, "master_hashtable before copying to hashtable_ro: %p\n", *master_hashtable);
+#endif
     // reset all counters in next hashtable
     ht_reset_counters(*master_hashtable);
     // delete last ro-hashtable and set next ro-hashtable
     for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
-        ht_delete_all(tds[cnt].hashtable_ro_old);
+#if defined(DEBUG_VERBOSE)
+        fprintf(stderr, "pre ht_delete_all(tds[%u].hashtable_ro_old)\n", cnt);
+#endif
+        ht_delete_all(&(tds[cnt].hashtable_ro_old));
         ht_copy(*master_hashtable, &(tds[cnt].hashtable_ro));
     }
     // reset all thread counters
     for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
         atomic_set(&(tds[0].targets[cnt].itemcnt), 0);
     }
+#if defined(DEBUG_VERBOSE)
+    fprintf(stderr, "master_hashtable after copying to hastable_ro : %p\n", *master_hashtable);
+#endif
 #if defined(LOAD_BALANCE_INFO)
     fprintf(stderr, "\n%lu ===================================================\n",
             time(NULL));
 #endif
 
     smp_mb__after_atomic();
-    ht_delete_all(*master_hashtable);
-    // release master pointer to next hashtable
-    *master_hashtable = NULL;
+#if defined(DEBUG_VERBOSE)
+    fprintf(stderr, "pre ht_delete_all(*master_hashtable)\n");
+#endif
+    ht_delete_all(master_hashtable);
     // increase hashtable version to signal threads that a new version is available
     smp_mb__before_atomic();
     atomic_inc(&master_hashtable_idx);
@@ -1594,6 +1658,9 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
 #if defined(DEBUG)
     fprintf(stderr, "%lu - len(master_hashtable) after swapping to ro: %u\n",
             time(NULL), HASH_COUNT(*master_hashtable));
+#endif
+#if defined(DEBUG_VERBOSE)
+    fprintf(stderr, "master_hashtable at end of load_balance(): %p\n", *master_hashtable);
 #endif
 }
 

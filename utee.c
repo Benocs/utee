@@ -118,6 +118,10 @@ int main(int argc, char *argv[]) {
     atomic_set(&master_hashtable_idx, 0);
     smp_mb__after_atomic();
 
+#if defined(DEBUG_VERBOSE)
+    fprintf(stderr, "defining master_hashtable: %p\n", master_hashtable);
+#endif
+
     opterr = 0;
     while ((c = getopt (argc, argv, "d:l:m:n:i:t:DLHb")) != -1)
     switch (c) {
@@ -292,8 +296,14 @@ int main(int argc, char *argv[]) {
     while (run_flag) {
 
         if (loadbalanced_dist_enabled) {
+#if defined(DEBUG_VERBOSE)
+            fprintf(stderr, "master_hashtable before load_balance(): %p\n", master_hashtable);
+#endif
             load_balance(tds, num_threads, threshold, reorder_threshold,
                     &master_hashtable);
+#if defined(DEBUG_VERBOSE)
+            fprintf(stderr, "master_hashtable after load_balance() : %p\n", master_hashtable);
+#endif
         }
 
         // TODO: check whether to delete old values from deduplication_hashtable
@@ -309,7 +319,10 @@ int main(int argc, char *argv[]) {
             free(res);
     }
 
-    ht_delete_all(master_hashtable);
-    dedup_ht_delete_all(deduplication_hashtable);
+#if defined(DEBUG_VERBOSE)
+    fprintf(stderr, "master_hashtable before shutdown: %p\n", master_hashtable);
+#endif
+    ht_delete_all(&master_hashtable);
+    dedup_ht_delete_all(&deduplication_hashtable);
     return 0;
 }
