@@ -240,7 +240,7 @@ void ht_copy(struct s_hashable *ht_from, struct s_hashable **ht_to);
 
 void ht_reset_counters(struct s_hashable *ht);
 
-void ht_delete_all(struct s_hashable *ht);
+void ht_delete_all(struct s_hashable **ht);
 
 /************************ deduplication hashtable methods ********************/
 struct s_deduplication_hashable* dedup_ht_get(
@@ -253,7 +253,7 @@ struct s_deduplication_hashable* dedup_ht_get_add(
         atomic_t now,
         uint8_t overwrite);
 
-void dedup_ht_delete_all(struct s_deduplication_hashable *ht);
+void dedup_ht_delete_all(struct s_deduplication_hashable **ht);
 /************************ packet callbacks ***********************************/
 
 /************************ packet loop ****************************************/

@@ -481,15 +481,29 @@ void ht_reset_counters(struct s_hashable *ht) {
     smp_mb__after_atomic();
 }
 
-void ht_delete_all(struct s_hashable *ht) {
+void ht_delete_all(struct s_hashable **ht) {
     struct s_hashable *s, *tmp;
 
-    HASH_ITER(hh, ht, s, tmp) {
-        HASH_DEL(ht, s);
-        free(s);
+    if (! (*ht == NULL)) {
+#if defined(HASH_DEBUG)
+        fprintf(stderr, "ht_delete_all: ht: %p s: %p\n", ht, s);
+#endif
+        HASH_ITER(hh, *ht, s, tmp) {
+#if defined(HASH_DEBUG)
+            fprintf(stderr, "ht_delete_all: deleting ht: %p s: %p\n", *ht, s);
+#endif
+            HASH_DEL(*ht, s);
+#if defined(HASH_DEBUG)
+            fprintf(stderr, "ht_delete_all: freeing s: %p\n", s);
+#endif
+            free(s);
+        }
+#if defined(HASH_DEBUG)
+        fprintf(stderr, "ht_delete_all: freeing ht: %p\n", *ht);
+#endif
+        free(*ht);
+        *ht = NULL;
     }
-    free(ht);
-    ht = NULL;
 }
 
 /************************ deduplication hashtable methods ********************/
@@ -575,23 +589,36 @@ struct s_deduplication_hashable* dedup_ht_get_add(
     return ht_e;
 }
 
-void dedup_ht_delete_all(struct s_deduplication_hashable *ht) {
+void dedup_ht_delete_all(struct s_deduplication_hashable **ht) {
     struct s_deduplication_hashable *s, *tmp;
 
-    if (pthread_rwlock_wrlock(&deduplication_lock) != 0) {
-        fprintf(stderr,"%lu - cannot acquire write lock\n", time(NULL));
-        return;
-    }
-    HASH_ITER(hh, ht, s, tmp) {
-        HASH_DEL(ht, s);
-        free(s);
-    }
-    fprintf(stderr, "done iteration dedup hashtable\n");
-    free(ht);
-    fprintf(stderr, "done freein ht\n");
+    if (! (*ht == NULL)) {
+#if defined(HASH_DEBUG)
+        fprintf(stderr, "dedup_ht_delete_all: ht: %p s: %p\n", ht, s);
+#endif
+        if (pthread_rwlock_wrlock(&deduplication_lock) != 0) {
+            fprintf(stderr,"%lu - ERROR: cannot acquire write lock\n", time(NULL));
+            return;
+        }
 
-    //ht = NULL;
-    pthread_rwlock_unlock(&deduplication_lock);
+        HASH_ITER(hh, *ht, s, tmp) {
+#if defined(HASH_DEBUG)
+            fprintf(stderr, "dedup_ht_delete_all: deleting ht: %p s: %p\n", *ht, s);
+#endif
+            HASH_DEL(*ht, s);
+#if defined(HASH_DEBUG)
+            fprintf(stderr, "dedup_ht_delete_all: freeing s: %p\n", s);
+#endif
+            free(s);
+        }
+#if defined(HASH_DEBUG)
+        fprintf(stderr, "dedup_ht_delete_all: freeing ht: %p\n", *ht);
+#endif
+        free(*ht);
+        *ht = NULL;
+
+        pthread_rwlock_unlock(&deduplication_lock);
+    }
 }
 
 // TODO: this is not IPv6 safe
