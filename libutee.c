@@ -1871,3 +1871,86 @@ uint8_t deduplicate(struct s_thread_data* td,
 
     return drop_pkt;
 }
+
+void deduplicate_maintenance(
+        struct s_thread_data* tds,
+        uint16_t num_threads,
+        uint32_t deduplication_threshold,
+        uint32_t deduplication_frequency_reset_interval,
+        pthread_rwlock_t* deduplication_lock) {
+
+    struct s_deduplication_hashable** deduplication_hashtable = tds->deduplication_hashtable;
+    struct s_deduplication_hashable *ht_e = NULL;
+    uint64_t last_run = 0;
+    uint64_t tnow;
+#if defined(DEBUG_STATS) || defined(DEBUG_DEDUPLICATION_MAINTENANCE)
+    uint64_t reset_cnt;
+    uint64_t src_cnt;
+#endif
+
+    smp_mb__before_atomic();
+    tnow = atomic_read(&now);
+    smp_mb__after_atomic();
+
+    // check whether it's time for a maintenance run. if not, abort
+    if (tnow - last_run < deduplication_threshold) {
+        return;
+    }
+#if defined(DEBUG_DEDUPLICATION_MAINTENANCE)
+    fprintf(stderr, "%lu - DEBUG - [deduplicate_maintenance] "
+            "time for maintenance\n",
+            time(NULL));
+#endif
+
+    // loop over hashmap, reset counters if necessary
+    if (pthread_rwlock_wrlock(deduplication_lock) != 0) {
+        fprintf(stderr,"%lu - ERROR - [deduplicate_maintenance] "
+                "cannot acquire write lock\n", time(NULL));
+        return;
+    }
+
+#if defined(DEBUG_DEDUPLICATION_MAINTENANCE)
+    fprintf(stderr, "%lu - DEBUG - [deduplicate_maintenance] "
+            "have lock\n",
+            time(NULL));
+#endif
+
+#if defined(DEBUG_STATS) || defined(DEBUG_DEDUPLICATION_MAINTENANCE)
+    reset_cnt = 0;
+    src_cnt = 0;
+#endif
+    for(ht_e=*deduplication_hashtable; ht_e != NULL; ht_e=ht_e->hh.next) {
+        src_cnt++;
+        if (tnow - ht_e->update_counter_timestamp_start >= deduplication_frequency_reset_interval) {
+#if defined(DEBUG_STATS) || defined(DEBUG_DEDUPLICATION_MAINTENANCE)
+            reset_cnt++;
+#endif
+#if defined(DEBUG_DEDUPLICATION_MAINTENANCE_VERBOSE)
+            fprintf(stderr, "%lu - DEBUG - [deduplicate_maintenance] "
+                    "key: %u, %u, %u resetting frequency counters (elapsed: %lus)\n",
+                    time(NULL),
+                    ht_e->key.addr,
+                    ht_e->key.port,
+                    ht_e->key.id,
+                    tnow - ht_e->update_counter_timestamp_start);
+#endif
+            ht_e->update_counter_value = 1;
+            ht_e->update_counter_timestamp_start = tnow;
+        }
+    }
+#if defined(DEBUG_STATS) || defined(DEBUG_DEDUPLICATION_MAINTENANCE)
+    fprintf(stderr, "%lu - DEBUG - [deduplicate_maintenance] "
+            "resetted update frequency for %lu sources (%lu tracked sources)\n",
+            time(NULL),
+            reset_cnt,
+            src_cnt);
+#endif
+
+    pthread_rwlock_unlock(deduplication_lock);
+
+#if defined(DEBUG_DEDUPLICATION_MAINTENANCE)
+    fprintf(stderr, "%lu - DEBUG - [deduplicate_maintenance] "
+            "maintenance done\n",
+            time(NULL));
+#endif
+}

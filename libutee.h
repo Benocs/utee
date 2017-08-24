@@ -295,6 +295,13 @@ uint8_t deduplicate(struct s_thread_data* td,
                 int numdatabytes,
                 atomic_t now);
 
+void deduplicate_maintenance(
+                struct s_thread_data* tds,
+                uint16_t num_threads,
+                uint32_t deduplication_threshold,
+                uint32_t deduplication_frequency_reset_interval,
+                pthread_rwlock_t* deduplication_lock);
+
 void sig_handler_toggle_optional_output(int signum);
 void sig_handler_shutdown(int signum);
 void sig_handler_ignore(int signum);

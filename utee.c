@@ -324,7 +324,17 @@ int main(int argc, char *argv[]) {
 #endif
         }
 
-        // TODO: check whether to delete old values from deduplication_hashtable
+        if (deduplication_enabled) {
+            deduplicate_maintenance(
+                    tds,
+                    num_threads,
+                    deduplication_threshold,
+                    deduplication_frequency_reset_interval,
+                    &deduplication_lock);
+
+            // TODO: check whether to delete old values from deduplication_hashtable
+        }
+
         sleep(1);
     }
 #ifdef LOG_INFO
