@@ -533,6 +533,10 @@ struct s_deduplication_hashable* dedup_ht_get(
     return ht_e;
 }
 
+double ema(double alpha, double old_value, double new_value) {
+    return (alpha * new_value) + (1.0 - alpha) * old_value;
+}
+
 struct s_deduplication_hashable* dedup_ht_get_add(
         struct s_deduplication_hashable **ht,
         t_deduplication_hashable_key *key,

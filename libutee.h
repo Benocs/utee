@@ -288,6 +288,8 @@ void sig_handler_toggle_optional_output(int signum);
 void sig_handler_shutdown(int signum);
 void sig_handler_ignore(int signum);
 
+double ema(double alpha, double old_value, double new_value);
+
 // variables that are changed when a signal arrives
 extern volatile uint8_t optional_output_enabled;
 extern volatile uint8_t run_flag;
