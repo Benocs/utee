@@ -155,8 +155,6 @@ uint16_t get_port4_uint(uint16_t port) {
 void cp_sockaddr(struct sockaddr_storage* src, struct sockaddr_storage* dst) {
     uint8_t cnt;
 
-    //ht_e->source = *source;
-
     if (src->ss_family == AF_INET) {
         ((struct sockaddr_in *)dst)->sin_family = ((struct sockaddr_in *)src)->sin_family;
         ((struct sockaddr_in *)dst)->sin_port = ((struct sockaddr_in *)src)->sin_port;
@@ -540,15 +538,14 @@ double ema(double alpha, double old_value, double new_value) {
 struct s_deduplication_hashable* dedup_ht_get_add(
         struct s_deduplication_hashable **ht,
         t_deduplication_hashable_key *key,
-        atomic_t now,
-        uint8_t overwrite) {
+        atomic_t now) {
     struct s_deduplication_hashable *ht_e = NULL;
 
     ht_e = dedup_ht_get(ht, key);
 
     if (ht_e == NULL) {
 #if defined(DEDUPLICATION_HASH_DEBUG)
-        fprintf(stderr, "%lu - ht: item not found. adding\n", time(NULL));
+        fprintf(stderr, "%lu - dedup_ht_get_add: item not found. adding\n", time(NULL));
 #endif
         if (pthread_rwlock_wrlock(&deduplication_lock) != 0) {
             fprintf(stderr,"%lu - cannot acquire write lock\n", time(NULL));
@@ -1791,14 +1788,7 @@ uint8_t deduplicate(struct s_thread_data* td,
      *     if no, set drop_pkt=1 to signal down stream that this is a potential
      *       duplicate
      */
-    ht_e = dedup_ht_get(deduplication_hashtable, &key);
-    if (ht_e == NULL) {
-#if defined(DEBUG_DEDUPLICATION)
-        fprintf(stderr, "%lu - found new source. adding it to deduplication hashmap\n",
-                time(NULL));
-#endif
-        ht_e = dedup_ht_get_add(deduplication_hashtable, &key, now, 1);
-    }
+    ht_e = dedup_ht_get_add(deduplication_hashtable, &key, now);
 
 #if defined(DEBUG_DEDUPLICATION)
     fprintf(stderr, "%lu - len(deduplication_hashtable): %u, now: %lu\n",
@@ -1828,7 +1818,7 @@ uint8_t deduplicate(struct s_thread_data* td,
     if (atomic_read(&(ht_e->inner_ht[pkt_idx].value)) &&
             ((atomic_read(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen)) + timeout) >= tnow) &&
             pkt_id != atomic_read(&(ht_e->inner_ht[pkt_idx].value))) {
-        fprintf(stderr, "%lu - ERROR packet identifier and value do not match: id: %u, value: %lu\n",
+        fprintf(stderr, "%lu - ERROR collision detected: packet identifier and value do not match: id: %u, value: %lu\n",
                 time(NULL),
                 pkt_id,
                 atomic_read(&(ht_e->inner_ht[pkt_idx].value)));
@@ -1848,17 +1838,17 @@ uint8_t deduplicate(struct s_thread_data* td,
     else {
 #if defined(LOG_INFO)
 #ifndef DEBUG_DEDUPLICATION
-    char addrbuf0[INET6_ADDRSTRLEN];
-    fprintf(stderr, "%lu - deduplicate. now: %lu, last_seen: %lu, source: %s:%u@%u, key: (%u, %u, %u)\n",
-            time(NULL),
-            tnow,
-            atomic_read(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen)),
-            get_ip(source_addr, addrbuf0),
-            get_port(source_addr),
-            key.id,
-            key.addr,
-            key.port,
-            key.id);
+        char addrbuf0[INET6_ADDRSTRLEN];
+        fprintf(stderr, "%lu - deduplicate. now: %lu, last_seen: %lu, source: %s:%u@%u, key: (%u, %u, %u)\n",
+                time(NULL),
+                tnow,
+                atomic_read(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen)),
+                get_ip(source_addr, addrbuf0),
+                get_port(source_addr),
+                key.id,
+                key.addr,
+                key.port,
+                key.id);
 #endif
         fprintf(stderr, "%lu - found active duplicate. dropping packet\n",
                 time(NULL));

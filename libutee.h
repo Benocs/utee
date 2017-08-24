@@ -261,8 +261,7 @@ struct s_deduplication_hashable* dedup_ht_get(
 struct s_deduplication_hashable* dedup_ht_get_add(
         struct s_deduplication_hashable **ht,
         t_deduplication_hashable_key *key,
-        atomic_t now,
-        uint8_t overwrite);
+        atomic_t now);
 
 void dedup_ht_delete_all(struct s_deduplication_hashable **ht);
 /************************ packet callbacks ***********************************/
