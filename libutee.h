@@ -45,6 +45,7 @@
 #include <sys/ioctl.h>
 #include <linux/sockios.h>
 #include <sys/select.h>
+#include <pthread.h>
 
 #include "smp.h"
 #include "uthash.h"
@@ -71,6 +72,8 @@
 
 #define DEDUP_HT_SIZE 1031
 // TODO: have switch. increase either when almost full or when collision was detected
+// moving average: number of elements to consider
+#define DEDUP_UPDATE_FREQUENCY_INTERVAL_RMA_VALUES 10
 
 #define BUFLEN 4096
 #define MAXTHREADS 1024
@@ -161,6 +164,14 @@ typedef struct {
 struct s_deduplication_hashable {
     t_deduplication_hashable_key key;
     t_deduplication_inner_hashable_value inner_ht[DEDUP_HT_SIZE];
+
+    // frequency of updates of inner_ht
+    double update_frequency;
+    uint32_t update_counter_value;
+    uint64_t update_counter_timestamp_start;
+    // have at least n percent free
+    // increase otherwise
+    // increase upon collision instead of frequency..?
 
     UT_hash_handle hh;
 };

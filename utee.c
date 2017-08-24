@@ -96,6 +96,8 @@ int main(int argc, char *argv[]) {
 
     uint8_t deduplication_enabled = 0;
     uint32_t deduplication_timeout = 10;
+    uint32_t deduplication_threshold = 1;
+    uint32_t deduplication_frequency_reset_interval = 5;
 
     // load balance based on paket counts if 0
     // load balance based on byte counts if 1
@@ -123,7 +125,7 @@ int main(int argc, char *argv[]) {
 #endif
 
     opterr = 0;
-    while ((c = getopt (argc, argv, "d:l:m:n:i:t:DLHb")) != -1)
+    while ((c = getopt (argc, argv, "d:l:m:n:i:I:r:t:DLHb")) != -1)
     switch (c) {
         case 'l':
             split_addr(optarg, listenaddr, &listenport);
@@ -151,6 +153,20 @@ int main(int argc, char *argv[]) {
 #ifdef LOG_INFO
             fprintf(stderr, "%lu - deduplicate incoming stream\n",
                     time(NULL));
+#endif
+        break;
+        case 'I':
+            deduplication_threshold = strtoul(optarg, NULL, 10);
+#ifdef LOG_INFO
+            fprintf(stderr, "%lu - deduplicate maintenance every %u seconds\n",
+                    time(NULL), deduplication_threshold);
+#endif
+        break;
+        case 'r':
+            deduplication_frequency_reset_interval = strtoul(optarg, NULL, 10);
+#ifdef LOG_INFO
+            fprintf(stderr, "%lu - deduplicate update frequency interval %u seconds\n",
+                    time(NULL), deduplication_frequency_reset_interval);
 #endif
         break;
         case 'd':

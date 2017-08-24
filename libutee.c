@@ -566,29 +566,49 @@ struct s_deduplication_hashable* dedup_ht_get_add(
         ht_e->key.addr = key->addr;
         ht_e->key.port = key->port;
         ht_e->key.id = key->id;
+        ht_e->update_counter_timestamp_start = atomic_read(&now);
+        ht_e->update_counter_value = 1;
 
         HASH_ADD(hh, *ht, key, sizeof(t_deduplication_hashable_key), ht_e);
 
         pthread_rwlock_unlock(&deduplication_lock);
     }
-    /*
-    else if (overwrite) {
-        smp_mb__before_atomic();
-        atomic_set(&(ht_e->timestamp_pkt_seen), atomic_read(&now));
-        smp_mb__after_atomic();
-
-#if defined(DEDUPLICATION_HASH_DEBUG)
-        fprintf(stderr, "%lu - ht: item found. overwriting\n", time(NULL));
-#endif
-    }
-#if defined(DEDUPLICATION_HASH_DEBUG)
     else {
-        fprintf(stderr, "%lu - ht: item found. not overwriting. last_seen: %lu\n",
-            time(NULL),
-            atomic_read(&(ht_e->timestamp_pkt_seen)));
-    }
+#if defined(DEDUPLICATION_HASH_DEBUG)
+        fprintf(stderr, "%lu - dedup_ht_get_add: item found. updating counters\n", time(NULL));
 #endif
-    */
+        if (pthread_rwlock_wrlock(&deduplication_lock) != 0) {
+            fprintf(stderr,"%lu - cannot acquire write lock\n", time(NULL));
+            return NULL;
+        }
+
+        ht_e->update_counter_value++;
+        if (atomic_read(&now) > ht_e->update_counter_timestamp_start) {
+#if defined(DEBUG_STATS)
+            fprintf(stderr, "%lu - dedup_ht_get_add: update: key: %u, %u, %u counter: %u, tdiff: %lu, frequency: %f\n",
+                    time(NULL),
+                    ht_e->key.addr,
+                    ht_e->key.port,
+                    ht_e->key.id,
+                    ht_e->update_counter_value,
+                    atomic_read(&now) - ht_e->update_counter_timestamp_start,
+                    ht_e->update_frequency);
+#endif
+            if (! (ht_e->update_frequency)) {
+                ht_e->update_frequency = (double)ht_e->update_counter_value / (double)(
+                        atomic_read(&now) - ht_e->update_counter_timestamp_start);
+            }
+            else {
+                ht_e->update_frequency = ema(
+                        (double)1/(double)DEDUP_UPDATE_FREQUENCY_INTERVAL_RMA_VALUES,
+                        ht_e->update_frequency,
+                        (double)ht_e->update_counter_value / (double)(
+                            atomic_read(&now) - ht_e->update_counter_timestamp_start));
+            }
+        }
+
+        pthread_rwlock_unlock(&deduplication_lock);
+    }
 
     return ht_e;
 }
