@@ -286,7 +286,8 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
         uint64_t threshold, double reorder_threshold,
         struct s_hashable** master_hashtable);
 
-uint8_t deduplicate(struct s_thread_data* td,
+uint8_t deduplicate_packet(
+                struct s_thread_data* td,
                 struct sockaddr_storage* source_addr,
                 struct iphdr *iph,
                 struct udphdr *udph,

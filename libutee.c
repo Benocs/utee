@@ -747,7 +747,8 @@ uint8_t cb_deduplicate_load_balance(
         char* data,
         int numdatabytes,
         atomic_t now) {
-    return deduplicate(td, source_addr, iph, udph, data, numdatabytes, now);
+    return deduplicate_packet(td, source_addr, iph, udph, data, numdatabytes,
+            now);
 }
 
 uint8_t cb_deduplicate_duplicate(void) {
@@ -1727,7 +1728,8 @@ uint32_t get_dedup_inner_ht_packet_idx(
     return pkt_id % dedup_ht_size;
 }
 
-uint8_t deduplicate(struct s_thread_data* td,
+uint8_t deduplicate_packet(
+        struct s_thread_data* td,
         struct sockaddr_storage* source_addr,
         struct iphdr *iph,
         struct udphdr *udph,
