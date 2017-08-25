@@ -1784,18 +1784,14 @@ void sig_handler_ignore(int signum) {
 #endif
 }
 
-uint32_t get_dedup_inner_ht_packet_id(
+uint64_t get_dedup_inner_ht_packet_id(
         char* data,
-        int numdatabytes) {
-    // seqnum
-    // TODO: get packet identifier idx and width from user
-    return ntohl(((uint32_t*)data)[2]);
-}
-
-uint32_t get_dedup_inner_ht_packet_idx(
-        uint32_t pkt_id,
-        uint32_t dedup_ht_size) {
-    return pkt_id % dedup_ht_size;
+        int numdatabytes,
+        uint32_t id_idx) {
+    if (id_idx >= numdatabytes) {
+        return 0;
+    }
+    return ntohl(((uint32_t*)data)[id_idx]);
 }
 
 uint8_t deduplicate_packet(
@@ -1818,22 +1814,21 @@ uint8_t deduplicate_packet(
     // TODO: ==> hash entire pkt and compare hash?
     // TODO: from header only include protocol (udp), src-ip, src-port
     // TODO: have switch which states which first n bytes to hash
+    // TODO: time instead of packets - dynamically increasal of the array
 
-    // TODO: get hash of key
     t_deduplication_hashable_key key;
-    // TODO: get threshold / timeout from user
     uint32_t timeout = td->feature_settings.deduplication_timeout;
     struct s_deduplication_hashable *ht_e = NULL;
 
-    uint32_t pkt_id;
+    uint64_t pkt_id;
     uint32_t pkt_idx;
+    uint32_t hashvalue;
 
     uint64_t tnow;
 
-    // TODO: get packet id idx and width from user
-    uint16_t id_idx = 3;
     memset(&key, 0, sizeof(t_deduplication_hashable_key));
-    dedup_create_ht_key(&key, source_addr, data, numdatabytes, id_idx);
+    dedup_create_ht_key(&key, source_addr, data, numdatabytes,
+            td->deduplication_pkt_src_id_idx);
 
     smp_mb__before_atomic();
     tnow = atomic_read(&now);
@@ -1873,9 +1868,16 @@ uint8_t deduplicate_packet(
      *     if yes, overwrite them and forward packet
      *     if no, keep drop_pkt==1 and thus drop packet
      */
-    pkt_id = get_dedup_inner_ht_packet_id(data, numdatabytes);
-    pkt_idx = get_dedup_inner_ht_packet_idx(
-            pkt_id, ht_e->dedup_ht_size);
+    pkt_id = get_dedup_inner_ht_packet_id(data, numdatabytes,
+            td->deduplication_pkt_id_idx);
+    hashvalue = 0;
+    HASH_PKT_ID_MOD(
+            &pkt_id,
+            sizeof(pkt_id),
+            ht_e->dedup_ht_size,
+            hashvalue,
+            pkt_idx
+            );
 
     smp_mb__before_atomic();
 #if defined(DEBUG_DEDUPLICATION_VERBOSE)
@@ -1909,10 +1911,12 @@ uint8_t deduplicate_packet(
 #endif
     }
     else {
-#if defined(LOG_INFO)
-#ifndef DEBUG_DEDUPLICATION
+        drop_pkt = 1;
+#if defined(DEBUG_DEDUPLICATION) || defined(DEBUG_DEDUPLICATION_VERBOSE)
         char addrbuf0[INET6_ADDRSTRLEN];
-        fprintf(stderr, "%lu - deduplicate. now: %lu, last_seen: %lu, source: %s:%u@%u, key: (%u, %u, %u)\n",
+        fprintf(stderr, "%lu - found duplicate. dropping packet. "
+                "now: %lu, last_seen: %lu, source: %s:%u@%u, "
+                "key: (%u, %u, %u)\n",
                 time(NULL),
                 tnow,
                 atomic_read(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen)),
@@ -1922,9 +1926,6 @@ uint8_t deduplicate_packet(
                 key.addr,
                 key.port,
                 key.id);
-#endif
-        fprintf(stderr, "%lu - found active duplicate. dropping packet\n",
-                time(NULL));
 #endif
     }
     atomic_set(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen), tnow);
