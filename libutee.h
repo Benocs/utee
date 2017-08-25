@@ -97,6 +97,20 @@ do {                                                                            
 } while(0)
 #endif
 
+// default hashing of packet ID is to simply mod them by the size of the inner
+// deduplication hash table
+#ifndef HASH_PKT_ID
+#define HASH_PKT_ID HASH_NOP
+#endif
+
+#ifndef HASH_PKT_ID_MOD
+#define HASH_PKT_ID_MOD(key,keylen,num_bkts,hashv,bkt)                          \
+do {                                                                            \
+        HASH_PKT_ID(key,keylen,hashv)                                           \
+        bkt = (hashv) % (num_bkts);                                             \
+} while(0)
+#endif
+
 #ifndef CREATE_HT_KEY
 #define CREATE_HT_KEY create_ht_key_from_addr
 #endif
