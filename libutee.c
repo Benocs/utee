@@ -1893,10 +1893,12 @@ uint8_t deduplicate_packet(
     if (atomic_read(&(ht_e->inner_ht[pkt_idx].value)) &&
             ((atomic_read(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen)) + timeout) >= tnow) &&
             pkt_id != atomic_read(&(ht_e->inner_ht[pkt_idx].value))) {
-        fprintf(stderr, "%lu - ERROR collision detected: packet identifier and value do not match: id: %u, value: %lu\n",
+        fprintf(stderr, "%lu - ERROR collision detected: packet identifier "
+                "and value do not match: id: %lu, value: %lu - overwriting\n",
                 time(NULL),
                 pkt_id,
                 atomic_read(&(ht_e->inner_ht[pkt_idx].value)));
+        atomic_set(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen), 0);
     }
     if (! atomic_read(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen))) {
         drop_pkt = 0;
