@@ -31,24 +31,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <getopt.h>
 #include <errno.h>
-#include <fcntl.h>
 #include <string.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netinet/ip.h>
-#include <netinet/udp.h>
-#include <arpa/inet.h>
-#include <netdb.h>
 #include <signal.h>
+#include <stdint.h>
 #include <pthread.h>
-#include <sys/ioctl.h>
-#include <linux/sockios.h>
-#include <sys/select.h>
-#include <sys/stat.h>
-#include <sys/wait.h>
-#include <time.h>
 
 #include "libutee.h"
 
