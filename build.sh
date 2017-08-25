@@ -4,7 +4,7 @@
 # build utee
 ##################################
 
-SOURCE="utee.c libutee.c"
+SOURCE="utee.c libutee.c debug.c stderr.c kludge.c"
 BINARY=$(echo $SOURCE | cut -d. -f 1)
 
 [ -e "${BINARY}" ] && rm -f "${BINARY}"
@@ -20,10 +20,10 @@ MD5_SUM=\"$(mkdir tmp_md5 && cp ${SOURCE} tmp_md5 && \
     rm -rf tmp_md5 tmp_md5.tar)\"
 
 #
-# enable info-level logging
+# When DEBUG is defined, the debug primitives will be compiled else not.
+# To control the active debug level, use the -d<level> command line switch.
 #
-#log_flags="-DLOG_INFO -DLOG_WARN -DLOG_ERROR -DLOAD_BALANCE_INFO"
-log_flags="-DLOG_INFO -DLOG_WARN -DLOG_ERROR"
+log_flags="-DDEBUG"
 
 #
 # configure hash functions for address hashing and for hashmap key hashing
@@ -36,19 +36,6 @@ hash_flags="-DHASH_ADDR=HASH_NOP -DHASH_FUNCTION=HASH_JEN -DHASH_PKT_ID=HASH_NOP
 #extraflags="-DRCV_ON_RAW"
 extraflags="-DUSE_SELECT_WRITE -DRCV_ON_RAW"
 #extraflags="-DUSE_SELECT_READ -DUSE_SELECT_WRITE -DRCV_ON_RAW"
-
-#
-# debug flags
-#
-debugflags=
-#debugflags="-DDEBUG"
-#debugflags="-DDEBUG -DDEBUG_VERBOSE"
-#debugflags="-DDEBUG -DDEBUG_VERBOSE -DHASH_DEBUG -DDEBUG_SOCKETS"
-#debugflags="-DDEBUG -DDEBUG_VERBOSE -DHASH_DEBUG -DDEBUG_SOCKETS -DLOAD_BALANCE_DEBUG"
-#debugflags="-DDEBUG -DDEBUG_VERBOSE -DHASH_DEBUG -DDEBUG_SOCKETS -DLOAD_BALANCE_DEBUG -DDEBUG_DEDUPLICATION"
-
-#debugflags="-DLOAD_BALANCE_DEBUG -DDEBUG_DEDUPLICATION -DHASH_DEBUG"
-#debugflags="-DDEBUG -DDEBUG_DEDUPLICATION -DDEDUPLICATION_HASH_DEBUG"
 
 #
 # (debug) build

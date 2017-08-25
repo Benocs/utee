@@ -28,6 +28,7 @@
  *  * http://beej.us/guide/bgnet/
  */
 
+// TODO: remove stdio.h when debug is done
 #include <stdio.h>
 #include <unistd.h>
 #include <errno.h>
@@ -759,7 +760,7 @@ struct s_hashable** cb_pre_pkt_read_load_balance(
             fprintf(stderr, "\n");
         }
 #endif
-#ifdef DEBUG
+#ifdef DEBUG_
         fprintf(stderr, "%lu - listener %d: new master hash map available (%lu)\n",
                 time(NULL), td->thread_id, atomic_read(&master_hashtable_idx));
 #endif
@@ -772,7 +773,7 @@ struct s_hashable** cb_pre_pkt_read_load_balance(
         td->hashtable_ro_old = td->hashtable;
         td->hashtable = td->hashtable_ro;
         td->hashtable_ro = NULL;
-#ifdef DEBUG
+#ifdef DEBUG_
         fprintf(stderr, "%lu - listener: %d: set td->hashtable_ro to NULL: %p\n",
                 time(NULL), td->thread_id, td->hashtable_ro);
         fprintf(stderr, "%lu - listener: %d: td->hashtable_ro_old: %p\n",
@@ -933,7 +934,7 @@ void cb_shutdown_load_balance(
         struct s_hashable** hashtable,
         struct s_thread_data* td) {
 
-#ifdef DEBUG
+#ifdef DEBUG_VERBOSE
     fprintf(stderr, "thread: %u, *hashtable: %p, td->hashtable_ro: %p, td->hashtable_ro_old: %p\n",
             td->thread_id,
             *hashtable,
@@ -942,34 +943,34 @@ void cb_shutdown_load_balance(
 #endif
 
     if (!(hashtable == NULL)) {
-#ifdef DEBUG
+#ifdef DEBUG_VERBOSE
         fprintf(stderr, "thread: %u in cb_shutdown_load_balance pre  ht_delete_all(hastable)           : %p\n",
                 td->thread_id, *hashtable);
 #endif
         ht_delete_all(hashtable);
-#ifdef DEBUG
+#ifdef DEBUG_VERBOSE
         fprintf(stderr, "thread: %u in cb_shutdown_load_balance post ht_delete_all(hastable)           : %p\n",
                 td->thread_id, *hashtable);
 #endif
     }
-#ifdef DEBUG
+#ifdef DEBUG_VERBOSE
     fprintf(stderr, "thread: %u in cb_shutdown_load_balance pre  ht_delete_all(td->hashtable_ro)    : %p\n",
             td->thread_id, td->hashtable_ro);
 #endif
     ht_delete_all(&(td->hashtable_ro));
-#ifdef DEBUG
+#ifdef DEBUG_VERBOSE
     fprintf(stderr, "thread: %u in cb_shutdown_load_balance post ht_delete_all(td->hashtable_ro)    : %p\n",
             td->thread_id, td->hashtable_ro);
 #endif
     // only try to delete old hashtable if it still has entries. otherwise
     // the master-thread has already deleted it (for us)
     if (!(td->hashtable_ro_old == NULL)) {
-#ifdef DEBUG
+#ifdef DEBUG_VERBOSE
         fprintf(stderr, "thread: %u in cb_shutdown_load_balance pre  ht_delete_all(td->hashtable_ro_old): %p\n",
                 td->thread_id, td->hashtable_ro_old);
 #endif
         ht_delete_all(&(td->hashtable_ro_old));
-#ifdef DEBUG
+#ifdef DEBUG_VERBOSE
         fprintf(stderr, "thread: %u in cb_shutdown_load_balance post ht_delete_all(td->hashtable_ro_old): %p\n",
                 td->thread_id, td->hashtable_ro_old);
 #endif
@@ -1021,10 +1022,10 @@ void *tee(void *arg0) {
 
     uint16_t cnt;
 
-#if defined(DEBUG) || defined(LOG_ERROR) || defined(DEBUG_SOCKETS) || defined(DEBUG_DEDUPLICATION)
+#if defined(LOG_ERROR) || defined(DEBUG_SOCKETS) || defined(DEBUG_DEDUPLICATION)
     char addrbuf0[INET6_ADDRSTRLEN];
 #endif
-#if defined(DEBUG) || defined(HASH_DEBUG) || defined(LOG_ERROR) || defined(DEBUG_SOCKETS)
+#if defined(HASH_DEBUG) || defined(LOG_ERROR) || defined(DEBUG_SOCKETS)
     char addrbuf1[INET6_ADDRSTRLEN];
 #endif
 
@@ -1289,7 +1290,7 @@ int prepare_sending_socket(struct sockaddr *addr, socklen_t len, uint32_t pipe_s
 #endif
     }
 
-#ifdef DEBUG
+#ifdef DEBUG_VERBOSE
     char addrbuf[INET6_ADDRSTRLEN];
     fprintf(stderr, "%lu - connecting to target: %s:%d\n",
         time(NULL),
@@ -1425,7 +1426,7 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
     uint8_t invalidated_targets[MAXTHREADS];
     uint8_t found_first_valid_target = 0;
 
-#if defined(DEBUG) || defined(LOAD_BALANCE_INFO)
+#if defined(DEBUG_) || defined(LOAD_BALANCE_INFO)
     char addrbuf0[INET6_ADDRSTRLEN];
     char addrbuf1[INET6_ADDRSTRLEN];
 #if defined(LOAD_BALANCE_INFO)
@@ -1456,7 +1457,7 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
         return;
 
     if (tot_cnt < threshold) {
-#if defined(DEBUG)
+#if defined(DEBUG_)
         fprintf(stderr, "%lu - not load balancing: tot_cnt < threshold: %lu < %lu\n",
                 time(NULL), tot_cnt, threshold);
 #endif
@@ -1472,7 +1473,7 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
 #endif
     // merge hashmaps
     for (cnt = 0; cnt < num_threads; cnt++) {
-#if defined(DEBUG)
+#if defined(DEBUG_)
         fprintf(stderr, "%lu - merging thread hash maps into master. thread: %u\n",
                 time(NULL), cnt);
 #if defined(DEBUG_VERBOSE)
@@ -1593,7 +1594,7 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
             hit_reordering_threshold = 1;
         else
             hit_reordering_threshold = 0;
-#if defined(DEBUG)
+#if defined(DEBUG_)
         fprintf(stderr, "%lu - hit_reordering_threshold: %u\n",
                 time(NULL), hit_reordering_threshold);
 #endif
@@ -1605,7 +1606,7 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
         fprintf(stderr, "%lu - optimization iteration: %u of max %u\n",
                 time(NULL), itcnt+1, MAXOPTIMIZATIONITERATIONS);
 #endif
-#if defined(DEBUG)
+#if defined(DEBUG_)
         fprintf(stderr, "%lu - load_balance: out_min: %s:%u (%lu), "
                 "out_max: %s:%u (%lu)\n",
                 time(NULL),
@@ -1737,7 +1738,7 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
     smp_mb__before_atomic();
     atomic_inc(&master_hashtable_idx);
     smp_mb__after_atomic();
-#if defined(DEBUG)
+#if defined(DEBUG_)
     fprintf(stderr, "%lu - len(master_hashtable) after swapping to ro: %u\n",
             time(NULL), HASH_COUNT(*master_hashtable));
 #endif
@@ -1982,7 +1983,9 @@ void deduplicate_maintenance(
     src_cnt = 0;
 #endif
     for(ht_e=*deduplication_hashtable; ht_e != NULL; ht_e=ht_e->hh.next) {
+#if defined(DEBUG_STATS) || defined(DEBUG_DEDUPLICATION_MAINTENANCE)
         src_cnt++;
+#endif
 
         if (tnow - ht_e->update_counter_timestamp_start >= deduplication_frequency_reset_interval) {
 #if defined(DEBUG_STATS) || defined(DEBUG_DEDUPLICATION_MAINTENANCE)

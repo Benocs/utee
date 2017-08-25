@@ -38,6 +38,7 @@
 #include <stdint.h>
 #include <pthread.h>
 
+#include "debug.h"
 #include "libutee.h"
 
 /*
@@ -115,9 +116,14 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "defining master_hashtable: %p\n", master_hashtable);
 #endif
 
+    static char const optstr[] = "bd:DHl:Lm:n:p:P:i:I:r:R:t:T:v";
+
     opterr = 0;
-    while ((c = getopt (argc, argv, "d:l:m:n:p:P:i:I:r:R:t:DLHb")) != -1)
+    while ((c = getopt (argc, argv, optstr)) != -1)
     switch (c) {
+        case 'd':
+            db_setdebug(atoi(optarg));
+            break;
         case 'l':
             split_addr(optarg, listenaddr, &listenport);
 #ifdef LOG_INFO
@@ -160,7 +166,7 @@ int main(int argc, char *argv[]) {
                     time(NULL), deduplication_frequency_reset_interval);
 #endif
         break;
-        case 'd':
+        case 'T':
             deduplication_timeout = strtoul(optarg, NULL, 10);
 #ifdef LOG_INFO
             fprintf(stderr, "%lu - deduplicate timeout: %u seconds\n",
@@ -256,6 +262,8 @@ int main(int argc, char *argv[]) {
     if (mode == 0xFF || num_threads == 0 || listenport == 0 ||
             (num_threads > MAXTHREADS) || (num_targets == 0))
         usage(argc, argv);
+
+    DB_TRACE(1, "test debug output");
 
     signal(SIGUSR1, sig_handler_toggle_optional_output);
     signal(SIGTERM, sig_handler_shutdown);
