@@ -22,6 +22,8 @@
  *
  */
 
+#include <stdint.h>
+
 #define barrier() __asm__ __volatile__("": : :"memory")
 
 #define smp_mb__before_atomic() barrier()
