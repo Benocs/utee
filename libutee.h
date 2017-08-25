@@ -194,6 +194,12 @@ struct s_thread_data {
     atomic_t last_used_master_hashtable_idx;
 
     struct s_deduplication_hashable** deduplication_hashtable;
+    // in addition to src IP and src port,
+    // use an unsigned 32bit value from the packet to identify packet source
+    uint32_t deduplication_pkt_src_id_idx;
+    // unsigned 32bit value from the packet to identify the packet
+    // (e.g., an application layer sequence number)
+    uint32_t deduplication_pkt_id_idx;
 };
 
 unsigned short checksum (unsigned short *buf, int nwords);
