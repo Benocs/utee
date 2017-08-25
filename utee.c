@@ -98,6 +98,7 @@ int main(int argc, char *argv[]) {
     uint32_t deduplication_timeout = 10;
     uint32_t deduplication_threshold = 1;
     uint32_t deduplication_frequency_reset_interval = 5;
+    double deduplication_inner_ht_resize_factor = 4;
 
     // load balance based on paket counts if 0
     // load balance based on byte counts if 1
@@ -330,6 +331,7 @@ int main(int argc, char *argv[]) {
                     num_threads,
                     deduplication_threshold,
                     deduplication_frequency_reset_interval,
+                    deduplication_inner_ht_resize_factor,
                     &deduplication_lock);
 
             // TODO: check whether to delete old values from deduplication_hashtable

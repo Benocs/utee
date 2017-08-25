@@ -1940,6 +1940,7 @@ void deduplicate_maintenance(
         uint16_t num_threads,
         uint32_t deduplication_threshold,
         uint32_t deduplication_frequency_reset_interval,
+        double resize_factor,
         pthread_rwlock_t* deduplication_lock) {
 
     struct s_deduplication_hashable** deduplication_hashtable = tds->deduplication_hashtable;
