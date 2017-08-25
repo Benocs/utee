@@ -535,6 +535,57 @@ double ema(double alpha, double old_value, double new_value) {
     return (alpha * new_value) + (1.0 - alpha) * old_value;
 }
 
+t_deduplication_inner_hashable_value* allocate_inner_ht(
+        uint32_t old_size,
+        uint32_t new_size,
+        t_deduplication_inner_hashable_value* old_inner_ht) {
+    // NOTE: this method is not thread safe. ensure that locking happens
+
+    t_deduplication_inner_hashable_value* inner_ht = NULL;
+    uint32_t cnt;
+    uint32_t pkt_idx;
+
+#if defined(DEDUPLICATION_INNER_HASH_DEBUG_VERBOSE)
+    fprintf(stderr, "%lu - DEBUG - [allocate_inner_ht] "
+            "old_size: %u, new_size: %u\n",
+            time(NULL),
+            old_size,
+            new_size);
+#endif
+    if ((inner_ht = (t_deduplication_inner_hashable_value*)
+                malloc(new_size * sizeof(t_deduplication_inner_hashable_value))) == NULL) {
+        perror("allocate new inner hashtable");
+        fprintf(stderr, "%lu - cannot allocate new inner hashtable\n",
+                time(NULL));
+        return NULL;
+    }
+    memset(inner_ht, 0, new_size * sizeof(t_deduplication_inner_hashable_value));
+
+    for (cnt=0; cnt < old_size; cnt++) {
+        pkt_idx = get_dedup_inner_ht_packet_idx(
+                atomic_read(&(old_inner_ht[cnt].value)), new_size);
+
+        atomic_set(&(inner_ht[pkt_idx].timestamp_pkt_seen),
+                atomic_read(&(old_inner_ht[cnt].timestamp_pkt_seen)));
+        atomic_set(&(inner_ht[pkt_idx].value),
+                atomic_read(&(old_inner_ht[cnt].value)));
+    }
+
+    delete_inner_ht(old_inner_ht, old_size);
+
+    return inner_ht;
+}
+
+void delete_inner_ht(t_deduplication_inner_hashable_value* inner_ht, uint32_t size) {
+    // NOTE: this method is not thread safe. ensure that locking happens
+
+#if defined(DEDUPLICATION_INNER_HASH_DEBUG_VERBOSE)
+    fprintf(stderr, "%lu - DEBUG - [delete_inner_ht] "
+            "size: %u\n", time(NULL), size);
+#endif
+    free(inner_ht);
+}
+
 struct s_deduplication_hashable* dedup_ht_get_add(
         struct s_deduplication_hashable **ht,
         t_deduplication_hashable_key *key,
@@ -565,6 +616,8 @@ struct s_deduplication_hashable* dedup_ht_get_add(
         ht_e->key.id = key->id;
         ht_e->update_counter_timestamp_start = atomic_read(&now);
         ht_e->update_counter_value = 1;
+        ht_e->inner_ht = allocate_inner_ht(0, INITIAL_DEDUP_HT_SIZE, NULL);
+        ht_e->dedup_ht_size = INITIAL_DEDUP_HT_SIZE;
 
         HASH_ADD(hh, *ht, key, sizeof(t_deduplication_hashable_key), ht_e);
 
@@ -626,6 +679,7 @@ void dedup_ht_delete_all(struct s_deduplication_hashable **ht) {
 #if defined(HASH_DEBUG)
             fprintf(stderr, "dedup_ht_delete_all: deleting ht: %p s: %p\n", *ht, s);
 #endif
+            delete_inner_ht((*ht)->inner_ht, (*ht)->dedup_ht_size);
             HASH_DEL(*ht, s);
 #if defined(HASH_DEBUG)
             fprintf(stderr, "dedup_ht_delete_all: freeing s: %p\n", s);
@@ -1769,7 +1823,7 @@ uint8_t deduplicate_packet(
     tnow = atomic_read(&now);
     smp_mb__after_atomic();
 
-#if defined(DEBUG_DEDUPLICATION)
+#if defined(DEBUG_DEDUPLICATION_VERBOSE)
     char addrbuf0[INET6_ADDRSTRLEN];
     fprintf(stderr, "\n");
     fprintf(stderr, "%lu - deduplicate. now: %lu, source: %s:%u@%u, key: (%u, %u, %u)\n",
@@ -1792,7 +1846,7 @@ uint8_t deduplicate_packet(
      */
     ht_e = dedup_ht_get_add(deduplication_hashtable, &key, now);
 
-#if defined(DEBUG_DEDUPLICATION)
+#if defined(DEBUG_DEDUPLICATION_VERBOSE)
     fprintf(stderr, "%lu - len(deduplication_hashtable): %u, now: %lu\n",
             time(NULL), HASH_COUNT(*deduplication_hashtable), tnow);
 #endif
@@ -1805,11 +1859,12 @@ uint8_t deduplicate_packet(
      */
     pkt_id = get_dedup_inner_ht_packet_id(data, numdatabytes);
     pkt_idx = get_dedup_inner_ht_packet_idx(
-            pkt_id, DEDUP_HT_SIZE);
+            pkt_id, ht_e->dedup_ht_size);
 
     smp_mb__before_atomic();
-#if defined(DEBUG_DEDUPLICATION)
-    fprintf(stderr, "%lu - packet identifier(seqnum): %u, idx: %u, last_seen: %lu, existing value(seqnum): %lu\n",
+#if defined(DEBUG_DEDUPLICATION_VERBOSE)
+    fprintf(stderr, "%lu - packet identifier(seqnum): %u, idx: %u, "
+            "last_seen: %lu, existing value(seqnum): %lu\n",
             time(NULL),
             pkt_id,
             pkt_idx,
@@ -1827,13 +1882,13 @@ uint8_t deduplicate_packet(
     }
     if (! atomic_read(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen))) {
         drop_pkt = 0;
-#if defined(DEBUG_DEDUPLICATION)
+#if defined(DEBUG_DEDUPLICATION_VERBOSE)
         fprintf(stderr, "%lu - found new packet. adding it\n", time(NULL));
 #endif
     }
     else if ((atomic_read(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen)) + timeout) < tnow) {
         drop_pkt = 0;
-#if defined(DEBUG_DEDUPLICATION)
+#if defined(DEBUG_DEDUPLICATION_VERBOSE)
         fprintf(stderr, "%lu - found stale packet. overwriting it\n", time(NULL));
 #endif
     }

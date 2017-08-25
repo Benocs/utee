@@ -70,7 +70,7 @@
  * * implement full IPv6 support
  */
 
-#define DEDUP_HT_SIZE 1031
+#define INITIAL_DEDUP_HT_SIZE 256
 // TODO: have switch. increase either when almost full or when collision was detected
 // moving average: number of elements to consider
 #define DEDUP_UPDATE_FREQUENCY_INTERVAL_RMA_VALUES 10
@@ -158,12 +158,14 @@ typedef struct {
     // NOTE: this might either be time or packets
     atomic_t timestamp_pkt_seen;
     // NOTE: this is a unique value identifying the current packet
+    // NOTE: can be used to recalcute inner ht idx when resizing inner ht
     atomic_t value;
 } t_deduplication_inner_hashable_value;
 
 struct s_deduplication_hashable {
     t_deduplication_hashable_key key;
-    t_deduplication_inner_hashable_value inner_ht[DEDUP_HT_SIZE];
+    t_deduplication_inner_hashable_value* inner_ht;
+    uint32_t dedup_ht_size;
 
     // frequency of updates of inner_ht
     double update_frequency;
