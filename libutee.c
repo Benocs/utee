@@ -1948,8 +1948,11 @@ void deduplicate_maintenance(
 
     struct s_deduplication_hashable** deduplication_hashtable = tds->deduplication_hashtable;
     struct s_deduplication_hashable *ht_e = NULL;
+    uint32_t timeout = tds->feature_settings.deduplication_timeout;
+
     uint64_t last_run = 0;
     uint64_t tnow;
+    uint32_t dedup_ht_size;
 #if defined(DEBUG_STATS) || defined(DEBUG_DEDUPLICATION_MAINTENANCE)
     uint64_t reset_cnt;
     uint64_t src_cnt;
@@ -1963,6 +1966,8 @@ void deduplicate_maintenance(
     if (tnow - last_run < deduplication_threshold) {
         return;
     }
+    last_run = tnow;
+
 #if defined(DEBUG_DEDUPLICATION_MAINTENANCE)
     fprintf(stderr, "%lu - DEBUG - [deduplicate_maintenance] "
             "time for maintenance\n",
@@ -1988,6 +1993,7 @@ void deduplicate_maintenance(
 #endif
     for(ht_e=*deduplication_hashtable; ht_e != NULL; ht_e=ht_e->hh.next) {
         src_cnt++;
+
         if (tnow - ht_e->update_counter_timestamp_start >= deduplication_frequency_reset_interval) {
 #if defined(DEBUG_STATS) || defined(DEBUG_DEDUPLICATION_MAINTENANCE)
             reset_cnt++;
@@ -2003,6 +2009,25 @@ void deduplicate_maintenance(
 #endif
             ht_e->update_counter_value = 1;
             ht_e->update_counter_timestamp_start = tnow;
+        }
+
+        if (ht_e->update_frequency > ht_e->dedup_ht_size/2.0/timeout) {
+            dedup_ht_size = (uint32_t)(ht_e->update_frequency*2.0*timeout*resize_factor);
+#if defined(DEBUG_DEDUPLICATION_MAINTENANCE)
+            fprintf(stderr, "%lu - DEBUG - [deduplicate_maintenance] "
+                    "increasing inner ht from %u to %u due to "
+                    "update frequency %fHz and packet timeout: %us\n",
+                    time(NULL),
+                    ht_e->dedup_ht_size,
+                    dedup_ht_size,
+                    ht_e->update_frequency,
+                    timeout);
+#endif
+            ht_e->inner_ht = allocate_inner_ht(
+                    ht_e->dedup_ht_size,
+                    dedup_ht_size,
+                    ht_e->inner_ht);
+            ht_e->dedup_ht_size = dedup_ht_size;
         }
     }
 #if defined(DEBUG_STATS) || defined(DEBUG_DEDUPLICATION_MAINTENANCE)
