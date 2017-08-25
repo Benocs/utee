@@ -543,6 +543,8 @@ t_deduplication_inner_hashable_value* allocate_inner_ht(
 
     t_deduplication_inner_hashable_value* inner_ht = NULL;
     uint32_t cnt;
+    uint32_t hashvalue = 0;
+    uint64_t pkt_id;
     uint32_t pkt_idx;
 
 #if defined(DEDUPLICATION_INNER_HASH_DEBUG_VERBOSE)
@@ -561,9 +563,23 @@ t_deduplication_inner_hashable_value* allocate_inner_ht(
     }
     memset(inner_ht, 0, new_size * sizeof(t_deduplication_inner_hashable_value));
 
+    // copy old elements into new array
     for (cnt=0; cnt < old_size; cnt++) {
-        pkt_idx = get_dedup_inner_ht_packet_idx(
-                atomic_read(&(old_inner_ht[cnt].value)), new_size);
+        pkt_id = atomic_read(&(old_inner_ht[cnt].value));
+        hashvalue = 0;
+        HASH_PKT_ID_MOD(
+                &pkt_id,
+                sizeof(pkt_id),
+                new_size,
+                hashvalue,
+                pkt_idx
+                );
+
+        if (atomic_read(&(inner_ht[pkt_idx].timestamp_pkt_seen))) {
+            fprintf(stderr, "%lu - ERROR - [allocate_inner_ht] "
+                    "collision detected when creating resized hashtable\n",
+                    time(NULL));
+        }
 
         atomic_set(&(inner_ht[pkt_idx].timestamp_pkt_seen),
                 atomic_read(&(old_inner_ht[cnt].timestamp_pkt_seen)));
