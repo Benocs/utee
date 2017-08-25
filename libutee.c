@@ -178,7 +178,7 @@ struct s_target* hash_based_output(uint64_t key, struct s_thread_data* td) {
     uint32_t target = 0;
 
     // (key, keylen, num_bkts, hashv, bkt)
-    HASH_ADDR(
+    HASH_ADDR_MOD(
             &key,
             sizeof(key),
             td->num_targets,

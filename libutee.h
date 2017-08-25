@@ -79,45 +79,29 @@
 #define MAXTHREADS 1024
 #define MAXOPTIMIZATIONITERATIONS 500
 
-#define HASH_MOD(key, keylen, num_bkts, hashv, bkt)                           \
+#define HASH_NOP(key, keylen, hashv)                                          \
 do {                                                                          \
     hashv = *key;                                                             \
-    bkt = (*key) % num_bkts;                                                  \
-} while (0)
-
-#define HASH_BER_MOD(key, keylen, num_bkts, hashv, bkt)                       \
-do {                                                                          \
-    unsigned _hb_keylen=(unsigned)keylen;                                     \
-    const unsigned char *_hb_key=(const unsigned char*)(key);                 \
-    (hashv) = 0;                                                              \
-    while (_hb_keylen-- != 0U) {                                              \
-        (hashv) = 33 * hashv ^ *_hb_key++;                                    \
-    }                                                                         \
-    bkt = (hashv) % (num_bkts);                                               \
-} while (0)
-
-#define HASH_JEN_32(key, keylen, num_bkts, hashv, bkt)                        \
-do {                                                                          \
-    hashv = (*key +0x7ed55d16) + (*key<<12);                                  \
-    hashv = (hashv^0xc761c23c) ^ (hashv>>19);                                 \
-    hashv = (hashv+0x165667b1) + (hashv<<5);                                  \
-    hashv = (hashv+0xd3a2646c) ^ (hashv<<9);                                  \
-    hashv = (hashv+0xfd7046c5) + (hashv<<3);                                  \
-    hashv = (hashv^0xb55a4f09) ^ (hashv>>16);                                 \
-                                                                              \
-    bkt = (hashv) % (num_bkts);                                               \
 } while (0)
 
 // default hashing for IP addresses is to simply mod them by the number of targets
 #ifndef HASH_ADDR
-#define HASH_ADDR HASH_MOD
+#define HASH_ADDR HASH_NOP
 #endif
 
-uint64_t create_ht_key_from_addr(struct sockaddr_storage* addr);
+#ifndef HASH_ADDR_MOD
+#define HASH_ADDR_MOD(key,keylen,num_bkts,hashv,bkt)                            \
+do {                                                                            \
+        HASH_ADDR(key,keylen,hashv)                                             \
+        bkt = (hashv) % (num_bkts);                                             \
+} while(0)
+#endif
 
 #ifndef CREATE_HT_KEY
 #define CREATE_HT_KEY create_ht_key_from_addr
 #endif
+
+uint64_t create_ht_key_from_addr(struct sockaddr_storage* addr);
 
 struct s_target {
     struct sockaddr_storage dest;

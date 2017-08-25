@@ -28,7 +28,7 @@ log_flags="-DLOG_INFO -DLOG_WARN -DLOG_ERROR"
 #
 # configure hash functions for address hashing and for hashmap key hashing
 #
-hash_flags="-DHASH_ADDR=HASH_MOD -DHASH_FUNCTION=HASH_JEN"
+hash_flags="-DHASH_ADDR=HASH_NOP -DHASH_FUNCTION=HASH_JEN -DHASH_PKT_ID=HASH_NOP"
 
 #
 # optional feature switches
