@@ -270,6 +270,19 @@ struct s_deduplication_hashable* dedup_ht_get_add(
         atomic_t now);
 
 void dedup_ht_delete_all(struct s_deduplication_hashable **ht);
+
+t_deduplication_inner_hashable_value* allocate_inner_ht(
+        uint32_t old_size,
+        uint32_t new_size,
+        t_deduplication_inner_hashable_value* old_inner_ht);
+
+void delete_inner_ht(
+        t_deduplication_inner_hashable_value* inner_ht,
+        uint32_t size);
+
+uint64_t get_dedup_inner_ht_packet_id(char* data, int numdatabytes,
+                uint32_t id_idx);
+
 /************************ packet callbacks ***********************************/
 
 /************************ packet loop ****************************************/
