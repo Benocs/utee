@@ -98,6 +98,8 @@ int main(int argc, char *argv[]) {
     uint32_t deduplication_timeout = 10;
     uint32_t deduplication_threshold = 1;
     uint32_t deduplication_frequency_reset_interval = 5;
+    uint32_t deduplication_pkt_src_id_idx = 3;
+    uint32_t deduplication_pkt_id_idx = 2;
     double deduplication_inner_ht_resize_factor = 4;
 
     // load balance based on paket counts if 0
@@ -126,7 +128,7 @@ int main(int argc, char *argv[]) {
 #endif
 
     opterr = 0;
-    while ((c = getopt (argc, argv, "d:l:m:n:i:I:r:t:DLHb")) != -1)
+    while ((c = getopt (argc, argv, "d:l:m:n:p:P:i:I:r:R:t:DLHb")) != -1)
     switch (c) {
         case 'l':
             split_addr(optarg, listenaddr, &listenport);
@@ -175,6 +177,28 @@ int main(int argc, char *argv[]) {
 #ifdef LOG_INFO
             fprintf(stderr, "%lu - deduplicate timeout: %u seconds\n",
                     time(NULL), deduplication_timeout);
+#endif
+        break;
+        case 'p':
+            deduplication_pkt_src_id_idx = strtoul(optarg, NULL, 10);
+#ifdef LOG_INFO
+            fprintf(stderr, "%lu - deduplicate packet source id index: %u\n",
+                    time(NULL), deduplication_pkt_src_id_idx);
+#endif
+        break;
+        case 'P':
+            deduplication_pkt_id_idx = strtoul(optarg, NULL, 10);
+#ifdef LOG_INFO
+            fprintf(stderr, "%lu - deduplicate packet id index: %u\n",
+                    time(NULL), deduplication_pkt_id_idx);
+#endif
+        break;
+        case 'R':
+            deduplication_inner_ht_resize_factor = strtoul(optarg, NULL, 10);
+#ifdef LOG_INFO
+            fprintf(stderr, "%lu - deduplicate inner hash table "
+                    "resize factor: %f\n",
+                    time(NULL), deduplication_inner_ht_resize_factor);
 #endif
         break;
         case 'b':
@@ -286,6 +310,9 @@ int main(int argc, char *argv[]) {
         }
         tds[cnt].features.deduplicate = deduplication_enabled;
         tds[cnt].feature_settings.deduplication_timeout = deduplication_timeout;
+
+        tds[cnt].deduplication_pkt_src_id_idx = deduplication_pkt_src_id_idx;
+        tds[cnt].deduplication_pkt_id_idx = deduplication_pkt_id_idx;
     }
     smp_mb__after_atomic();
 
