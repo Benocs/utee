@@ -35,10 +35,18 @@
 ** but is not called when DEBUG is undefined.
 ** -- See chapter 8 of 'The Practice of Programming', by Kernighan and Pike.
 */
+#define DB_TRACE_BUF_SIZE 255
 #define TRACE(x) \
             do { if (DB_ACTIVE) db_print x; } while (0)
-#define DB_TRACE(level, ...)\
-            do { if (DB_ACTIVE) db_print(level, __VA_ARGS__); } while (0)
+#define DB_TRACE(level, ...)                                                \
+    do {                                                                    \
+        if (DB_ACTIVE) {                                                    \
+            char buf[DB_TRACE_BUF_SIZE];                                    \
+            snprintf(buf, sizeof(buf), __VA_ARGS__);                        \
+            db_print(level, "%s:%d:%s(): %s\n",                             \
+                    __FILE__, __LINE__, __func__, buf);                     \
+        }                                                                   \
+    } while (0)
 
 /*
 ** Usage:  DB_CALL(level, ...);
