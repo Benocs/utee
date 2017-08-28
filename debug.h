@@ -20,6 +20,12 @@
 #define DB_ACTIVE 0
 #endif /* DEBUG */
 
+#define LOG_DEBUG       10
+#define LOG_INFO        20
+#define LOG_WARN        30
+#define LOG_ERROR       40
+#define LOG_CRITICAL    50
+
 #define DB_TRACE_BUF_SIZE 255
 #define DB_TRACE_FMT "%s:%d:%s(): %s\n", __FILE__, __LINE__, __func__
 
