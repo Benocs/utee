@@ -46,13 +46,13 @@
  * * implement full IPv6 support
  */
 
-#if defined(LOG_INFO)
+#if defined(DEBUG)
 #undef uthash_noexpand_fyi
-#define uthash_noexpand_fyi(tbl) fprintf(stderr,"%lu - warning: bucket expansion inhibited\n", \
-        time(NULL))
+#define uthash_noexpand_fyi(tbl) DB_TRACE(LOG_DEBUG,                          \
+        "bucket expansion inhibited")
 #undef uthash_expand_fyi
-#define uthash_expand_fyi(tbl) fprintf(stderr,"%lu - expanding to %d buckets\n", \
-        time(NULL), tbl->num_buckets)
+#define uthash_expand_fyi(tbl) DB_TRACE(LOG_DEBUG, "expanding to %d buckets", \
+        tbl->num_buckets)
 #endif
 
 void usage(int argc, char *argv[]) {
@@ -112,11 +112,9 @@ int main(int argc, char *argv[]) {
     atomic_set(&master_hashtable_idx, 0);
     smp_mb__after_atomic();
 
-#if defined(DEBUG_VERBOSE)
-    fprintf(stderr, "defining master_hashtable: %p\n", master_hashtable);
-#endif
-
     static char const optstr[] = "bd:DHl:Lm:n:p:P:i:I:r:R:t:T:v";
+
+    db_setdebug(LOG_ALL);
 
     opterr = 0;
     while ((c = getopt (argc, argv, optstr)) != -1)
@@ -126,144 +124,107 @@ int main(int argc, char *argv[]) {
             break;
         case 'l':
             split_addr(optarg, listenaddr, &listenport);
-#ifdef LOG_INFO
-            fprintf(stderr, "%lu - listen address: %s:%u\n",
-                    time(NULL), listenaddr, listenport);
-#endif
+            DB_TRACE(LOG_INFO, "listen address: %s:%u", listenaddr, listenport);
         break;
         case 'H':
             hash_based_dist_enabled = 1;
-#ifdef LOG_INFO
-            fprintf(stderr, "%lu - use hash-based while distributing\n",
-                    time(NULL));
-#endif
+            DB_TRACE(LOG_INFO, "use hash-based while distributing");
         break;
         case 'L':
             loadbalanced_dist_enabled = 1;
-#ifdef LOG_INFO
-            fprintf(stderr, "%lu - use load-balancing while distributing\n",
-                    time(NULL));
-#endif
+            DB_TRACE(LOG_INFO, "use load-balancing while distributing");
         break;
         case 'D':
             deduplication_enabled = 1;
-#ifdef LOG_INFO
-            fprintf(stderr, "%lu - deduplicate incoming stream\n",
-                    time(NULL));
-#endif
+            DB_TRACE(LOG_INFO, "deduplicate incoming stream");
         break;
         case 'I':
             deduplication_threshold = strtoul(optarg, NULL, 10);
-#ifdef LOG_INFO
-            fprintf(stderr, "%lu - deduplicate maintenance every %u seconds\n",
-                    time(NULL), deduplication_threshold);
-#endif
+            DB_TRACE(LOG_INFO, "deduplicate maintenance every %u seconds",
+                    deduplication_threshold);
         break;
         case 'r':
             deduplication_frequency_reset_interval = strtoul(optarg, NULL, 10);
-#ifdef LOG_INFO
-            fprintf(stderr, "%lu - deduplicate update frequency interval %u seconds\n",
-                    time(NULL), deduplication_frequency_reset_interval);
-#endif
+            DB_TRACE(LOG_INFO,
+                    "deduplicate update frequency interval %u seconds",
+                    deduplication_frequency_reset_interval);
         break;
         case 'T':
             deduplication_timeout = strtoul(optarg, NULL, 10);
-#ifdef LOG_INFO
-            fprintf(stderr, "%lu - deduplicate timeout: %u seconds\n",
-                    time(NULL), deduplication_timeout);
-#endif
+            DB_TRACE(LOG_INFO, "deduplicate timeout: %u seconds",
+                    deduplication_timeout);
         break;
         case 'p':
             deduplication_pkt_src_id_idx = strtoul(optarg, NULL, 10);
-#ifdef LOG_INFO
-            fprintf(stderr, "%lu - deduplicate packet source id index: %u\n",
-                    time(NULL), deduplication_pkt_src_id_idx);
-#endif
+            DB_TRACE(LOG_INFO, "deduplicate packet source id index: %u",
+                    deduplication_pkt_src_id_idx);
         break;
         case 'P':
             deduplication_pkt_id_idx = strtoul(optarg, NULL, 10);
-#ifdef LOG_INFO
-            fprintf(stderr, "%lu - deduplicate packet id index: %u\n",
-                    time(NULL), deduplication_pkt_id_idx);
-#endif
+            DB_TRACE(LOG_INFO, "deduplicate packet id index: %u",
+                    deduplication_pkt_id_idx);
         break;
         case 'R':
             deduplication_inner_ht_resize_factor = strtoul(optarg, NULL, 10);
-#ifdef LOG_INFO
-            fprintf(stderr, "%lu - deduplicate inner hash table "
-                    "resize factor: %f\n",
-                    time(NULL), deduplication_inner_ht_resize_factor);
-#endif
+            DB_TRACE(LOG_INFO,
+                    "deduplicate inner hash table resize factor: %f",
+                    deduplication_inner_ht_resize_factor);
         break;
         case 'b':
             loadbalance_bytecnt_based = 1;
         break;
         case 'n':
             num_threads = atoi(optarg);
-#ifdef LOG_INFO
-            fprintf(stderr, "%lu - number of threads: %u\n",
-                    time(NULL), num_threads);
-#endif
+            DB_TRACE(LOG_INFO, "number of threads: %u",
+                    num_threads);
         break;
         case 'm':
             switch (*optarg) {
                 case 'r':
                     mode = 'r';
-#ifdef LOG_INFO
-                    fprintf(stderr, "%lu - mode: round-robin distribution\n",
-                            time(NULL));
-#endif
+                    DB_TRACE(LOG_INFO, "mode: round-robin distribution");
                 break;
                 case 'd':
                     mode = 'd';
-#ifdef LOG_INFO
-                    fprintf(stderr, "%lu - mode: duplicate\n",
-                            time(NULL));
-#endif
+                    DB_TRACE(LOG_INFO, "mode: duplicate");
                 break;
                 default:
                     mode = 255;
-#ifdef LOG_INFO
-                    fprintf(stderr, "%lu - invalid mode 0x%x\n",
-                            time(NULL), mode);
-#endif
+                    DB_TRACE(LOG_INFO, "invalid mode 0x%x", mode);
                     usage(argc, argv);
                 break;
             }
         break;
         case 'i':
             threshold = strtoul(optarg, NULL, 10);
-#ifdef LOG_INFO
-            fprintf(stderr, "%lu - load balance every: %lu packets\n",
-                    time(NULL), threshold);
-#endif
+            DB_TRACE(LOG_INFO, "load balance every: %lu packets", threshold);
         break;
         case 't':
             reorder_threshold = atof(optarg);
-#ifdef LOG_INFO
-            fprintf(stderr, "%lu - load balance inter-target threshold: %.2f\n",
-                    time(NULL), reorder_threshold);
-#endif
+            DB_TRACE(LOG_INFO, "load balance inter-target threshold: %.2f",
+                    reorder_threshold);
         break;
         default:
             usage(argc, argv);
     }
 
-#ifdef LOG_INFO
-    if (loadbalance_bytecnt_based)
-        fprintf(stderr, "%lu - use load-balancing based on byte counters\n",
-                time(NULL));
-    else
-        fprintf(stderr, "%lu - use load-balancing based on packet counters\n",
-                time(NULL));
-#endif
+    DB_CALL(LOG_INFO,
+            if (loadbalance_bytecnt_based) {
+                DB_TRACE(LOG_INFO,
+                        "use load-balancing based on byte counters");
+            }
+            else {
+                DB_TRACE(LOG_INFO,
+                        "use load-balancing based on packet counters");
+            }
+        );
 
     num_targets = argc - optind;
     if (mode == 0xFF || num_threads == 0 || listenport == 0 ||
             (num_threads > MAXTHREADS) || (num_targets == 0))
         usage(argc, argv);
 
-    DB_TRACE(1, "test debug output");
+    DB_TRACE(LOG_ALL, "using debug level: %d", db_getdebug());
 
     signal(SIGUSR1, sig_handler_toggle_optional_output);
     signal(SIGTERM, sig_handler_shutdown);
@@ -271,12 +232,8 @@ int main(int argc, char *argv[]) {
     signal(SIGINT, sig_handler_shutdown);
     signal(SIGUSR2, sig_handler_ignore);
 
-#ifdef LOG_INFO
-    fprintf(stderr, "%lu - setting up listener socket...\n",
-            time(NULL));
-#endif
+    DB_TRACE(LOG_INFO, "setting up listener socket...");
     lsock = open_listener_socket(listenaddr, listenport, pipe_size);
-
 
     bzero(tds, sizeof(tds));
     // this one loops over all threads
@@ -320,7 +277,7 @@ int main(int argc, char *argv[]) {
 
     if (deduplication_enabled) {
         if (pthread_rwlock_init(&deduplication_lock, NULL) != 0) {
-            fprintf(stderr,"%lu - lock init failed\n", time(NULL));
+            DB_TRACE(LOG_CRITICAL, "lock init failed");
             exit(-1);
         }
     }
@@ -330,22 +287,14 @@ int main(int argc, char *argv[]) {
         pthread_create(&thread[cnt], NULL, &tee, (void *) &tds[cnt]);
     }
 
-#ifdef LOG_INFO
-    fprintf(stderr, "%lu - starting utee...\n", time(NULL));
-#endif
+    DB_TRACE(LOG_INFO, "starting utee...");
 
     // main thread to catch/handle signals, trigger load-balancing, if enabled
     while (run_flag) {
 
         if (loadbalanced_dist_enabled) {
-#if defined(DEBUG_VERBOSE)
-            fprintf(stderr, "master_hashtable before load_balance(): %p\n", master_hashtable);
-#endif
             load_balance(tds, num_threads, threshold, reorder_threshold,
                     &master_hashtable);
-#if defined(DEBUG_VERBOSE)
-            fprintf(stderr, "master_hashtable after load_balance() : %p\n", master_hashtable);
-#endif
         }
 
         if (deduplication_enabled) {
@@ -362,9 +311,7 @@ int main(int argc, char *argv[]) {
 
         sleep(1);
     }
-#ifdef LOG_INFO
-    fprintf(stderr, "%lu - [main] shutting down\n", time(NULL));
-#endif
+    DB_TRACE(LOG_INFO, "shutting down");
 
     for (cnt = 0; cnt < num_threads; cnt++) {
         pthread_join(thread[cnt], &res);
@@ -372,9 +319,6 @@ int main(int argc, char *argv[]) {
             free(res);
     }
 
-#if defined(DEBUG_VERBOSE)
-    fprintf(stderr, "master_hashtable before shutdown: %p\n", master_hashtable);
-#endif
     ht_delete_all(&master_hashtable);
     dedup_ht_delete_all(&deduplication_hashtable);
     return 0;
