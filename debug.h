@@ -10,6 +10,7 @@
 #define DEBUG_H
 
 #include <stdio.h>
+#include <time.h>
 #include "kludge.h"
 
 /* Control whether debugging macros are active at compile time */
@@ -26,17 +27,10 @@
 #define LOG_ERROR       40
 #define LOG_CRITICAL    50
 
+#define LOG_ALL         0xFF
+
 #define DB_TRACE_BUF_SIZE 255
-#define DB_TRACE_FMT "%s:%d:%s(): %s\n", __FILE__, __LINE__, __func__
-
-#define DB_TRACE_DISPLAY_TIME
-
-#ifdef DB_TRACE_DISPLAY_TIME
-#include <time.h>
-#undef DB_TRACE_FMT
-#define DB_TRACE_FMT "%lu - %s:%d:%s(): %s\n", \
-    time(NULL), __FILE__, __LINE__, __func__
-#endif
+#define DB_TRACE_LOGLVL_BUF_SIZE 10
 
 /*
 ** TRACE is a legacy interface; new code should use DB_TRACE.
@@ -58,9 +52,32 @@
 #define DB_TRACE(level, ...)                                                \
     do {                                                                    \
         if (DB_ACTIVE) {                                                    \
-            char buf[DB_TRACE_BUF_SIZE];                                    \
-            snprintf(buf, sizeof(buf), __VA_ARGS__);                        \
-            db_print(level, DB_TRACE_FMT, buf);                             \
+            char msgbuf[DB_TRACE_BUF_SIZE];                                 \
+            char loglvlbuf[DB_TRACE_LOGLVL_BUF_SIZE];                       \
+            switch (level) {                                                \
+                case LOG_DEBUG:                                             \
+                    snprintf(loglvlbuf, sizeof(loglvlbuf), "DEBUG");        \
+                    break;                                                  \
+                case LOG_INFO:                                              \
+                    snprintf(loglvlbuf, sizeof(loglvlbuf), "INFO");         \
+                    break;                                                  \
+                case LOG_WARN:                                              \
+                    snprintf(loglvlbuf, sizeof(loglvlbuf), "WARN");         \
+                    break;                                                  \
+                case LOG_ERROR:                                             \
+                    snprintf(loglvlbuf, sizeof(loglvlbuf), "ERROR");        \
+                    break;                                                  \
+                case LOG_CRITICAL:                                          \
+                    snprintf(loglvlbuf, sizeof(loglvlbuf), "CRITICAL");     \
+                    break;                                                  \
+                default:                                                    \
+                    snprintf(loglvlbuf, sizeof(loglvlbuf), "%d", level);    \
+                    break;                                                  \
+            }                                                               \
+            snprintf(msgbuf, sizeof(msgbuf), __VA_ARGS__);                  \
+            db_print(level, "%lu - %s - %s:%d:%s(): %s\n",                  \
+                    time(NULL), loglvlbuf, __FILE__, __LINE__, __func__,    \
+                    msgbuf);                                                \
         }                                                                   \
     } while (0)
 
