@@ -20,6 +20,18 @@
 #define DB_ACTIVE 0
 #endif /* DEBUG */
 
+#define DB_TRACE_BUF_SIZE 255
+#define DB_TRACE_FMT "%s:%d:%s(): %s\n", __FILE__, __LINE__, __func__
+
+#define DB_TRACE_DISPLAY_TIME
+
+#ifdef DB_TRACE_DISPLAY_TIME
+#include <time.h>
+#undef DB_TRACE_FMT
+#define DB_TRACE_FMT "%lu - %s:%d:%s(): %s\n", \
+    time(NULL), __FILE__, __LINE__, __func__
+#endif
+
 /*
 ** TRACE is a legacy interface; new code should use DB_TRACE.
 **
@@ -35,7 +47,6 @@
 ** but is not called when DEBUG is undefined.
 ** -- See chapter 8 of 'The Practice of Programming', by Kernighan and Pike.
 */
-#define DB_TRACE_BUF_SIZE 255
 #define TRACE(x) \
             do { if (DB_ACTIVE) db_print x; } while (0)
 #define DB_TRACE(level, ...)                                                \
@@ -43,8 +54,7 @@
         if (DB_ACTIVE) {                                                    \
             char buf[DB_TRACE_BUF_SIZE];                                    \
             snprintf(buf, sizeof(buf), __VA_ARGS__);                        \
-            db_print(level, "%s:%d:%s(): %s\n",                             \
-                    __FILE__, __LINE__, __func__, buf);                     \
+            db_print(level, DB_TRACE_FMT, buf);                             \
         }                                                                   \
     } while (0)
 
