@@ -15,7 +15,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301,
+ * USA.
  *
  * support for:
  *  * round-robin load-balance
@@ -24,11 +25,11 @@
  *  * packet deduplication in addition to either load-balance or duplicate
  *
  * based on:
- *  * http://pastebin.com/CG8zscaA (Spoofed UDP Flooder v2.5.3 FINAL by ohnoes1479)
+ *  * http://pastebin.com/CG8zscaA (Spoofed UDP Flooder v2.5.3 FINAL by
+ *    ohnoes1479)
  *  * http://beej.us/guide/bgnet/
  */
 
-// TODO: remove stdio.h when debug is done
 #include <stdio.h>
 #include <unistd.h>
 #include <errno.h>
@@ -126,7 +127,8 @@ uint64_t create_ht_key_from_addr(struct sockaddr_storage* addr) {
 }
 
 const char* get_ip(struct sockaddr_storage* addr, char* addrbuf) {
-    return inet_ntop(addr->ss_family, get_in_addr(addr), addrbuf, INET6_ADDRSTRLEN);
+    return inet_ntop(addr->ss_family, get_in_addr(addr), addrbuf,
+            INET6_ADDRSTRLEN);
 }
 
 uint16_t get_port(struct sockaddr_storage* addr) {
@@ -148,15 +150,22 @@ void cp_sockaddr(struct sockaddr_storage* src, struct sockaddr_storage* dst) {
     uint8_t cnt;
 
     if (src->ss_family == AF_INET) {
-        ((struct sockaddr_in *)dst)->sin_family = ((struct sockaddr_in *)src)->sin_family;
-        ((struct sockaddr_in *)dst)->sin_port = ((struct sockaddr_in *)src)->sin_port;
-        ((struct sockaddr_in *)dst)->sin_addr = ((struct sockaddr_in *)src)->sin_addr;
+        ((struct sockaddr_in *)dst)->sin_family = \
+                ((struct sockaddr_in *)src)->sin_family;
+        ((struct sockaddr_in *)dst)->sin_port = \
+                ((struct sockaddr_in *)src)->sin_port;
+        ((struct sockaddr_in *)dst)->sin_addr = \
+                ((struct sockaddr_in *)src)->sin_addr;
     }
     else {
-        ((struct sockaddr_in6 *)dst)->sin6_family = ((struct sockaddr_in6 *)src)->sin6_family;
-        ((struct sockaddr_in6 *)dst)->sin6_port = ((struct sockaddr_in6 *)src)->sin6_port;
-        ((struct sockaddr_in6 *)dst)->sin6_flowinfo = ((struct sockaddr_in6 *)src)->sin6_flowinfo;
-        ((struct sockaddr_in6 *)dst)->sin6_scope_id = ((struct sockaddr_in6 *)src)->sin6_scope_id;
+        ((struct sockaddr_in6 *)dst)->sin6_family = \
+                ((struct sockaddr_in6 *)src)->sin6_family;
+        ((struct sockaddr_in6 *)dst)->sin6_port = \
+                ((struct sockaddr_in6 *)src)->sin6_port;
+        ((struct sockaddr_in6 *)dst)->sin6_flowinfo = \
+                ((struct sockaddr_in6 *)src)->sin6_flowinfo;
+        ((struct sockaddr_in6 *)dst)->sin6_scope_id = \
+                ((struct sockaddr_in6 *)src)->sin6_scope_id;
 
         for (cnt=0; cnt<16; cnt++)
         ((struct sockaddr_in6 *)dst)->sin6_addr.s6_addr[cnt] = \
@@ -212,7 +221,8 @@ struct s_hashable* ht_get_add(struct s_hashable **ht, uint64_t key,
                 );
         added = 1;
 
-        if ((ht_e = (struct s_hashable*)malloc(sizeof(struct s_hashable))) == NULL) {
+        ht_e = (struct s_hashable*)malloc(sizeof(struct s_hashable));
+        if (ht_e == NULL) {
             perror("allocate new hashtable element");
             return NULL;
         }
@@ -469,13 +479,15 @@ t_deduplication_inner_hashable_value* allocate_inner_ht(
     DB_TRACE(LOG_DEBUG3, "old_size: %u, new_size: %u",
             old_size,
             new_size);
-    if ((inner_ht = (t_deduplication_inner_hashable_value*)
-                malloc(new_size * sizeof(t_deduplication_inner_hashable_value))) == NULL) {
+    inner_ht = (t_deduplication_inner_hashable_value*)
+            malloc(new_size * sizeof(t_deduplication_inner_hashable_value));
+    if (inner_ht == NULL) {
         perror("allocate new inner hashtable");
         DB_TRACE(LOG_ERROR, "cannot allocate new inner hashtable");
         return NULL;
     }
-    memset(inner_ht, 0, new_size * sizeof(t_deduplication_inner_hashable_value));
+    memset(inner_ht, 0,
+            new_size * sizeof(t_deduplication_inner_hashable_value));
 
     // copy old elements into new array
     for (cnt=0; cnt < old_size; cnt++) {
@@ -520,6 +532,7 @@ struct s_deduplication_hashable* dedup_ht_get_add(
         t_deduplication_hashable_key *key,
         atomic_t now) {
     struct s_deduplication_hashable *ht_e = NULL;
+    double freq;
 
     ht_e = dedup_ht_get(ht, key);
 
@@ -564,22 +577,22 @@ struct s_deduplication_hashable* dedup_ht_get_add(
                         ht_e->key.port,
                         ht_e->key.id,
                         ht_e->update_counter_value,
-                        atomic_read(&now) - ht_e->update_counter_timestamp_start,
+                        atomic_read(&now) - \
+                            ht_e->update_counter_timestamp_start,
                         ht_e->update_frequency);
 
+            freq = (double)ht_e->update_counter_value / \
+                   (atomic_read(&now) - ht_e->update_counter_timestamp_start);
             if (! (ht_e->update_frequency)) {
-                ht_e->update_frequency = (double)ht_e->update_counter_value / (double)(
-                        atomic_read(&now) - ht_e->update_counter_timestamp_start);
+                ht_e->update_frequency = freq;
             }
             else {
                 EMA(ht_e->update_frequency,
-                        (double)1/(double)DEDUP_UPDATE_FREQUENCY_INTERVAL_RMA_VALUES,
+                        (double)1/DEDUP_UPDATE_FREQUENCY_INTERVAL_RMA_VALUES,
                         ht_e->update_frequency,
-                        (double)ht_e->update_counter_value / (double)(
-                            atomic_read(&now) - ht_e->update_counter_timestamp_start));
+                        freq);
             }
         }
-
         pthread_rwlock_unlock(&deduplication_lock);
     }
 
@@ -647,19 +660,24 @@ struct s_hashable** cb_pre_pkt_read_load_balance(
     smp_mb__before_atomic();
 
 
-    if (atomic_read(&(td->last_used_master_hashtable_idx)) != atomic_read(&master_hashtable_idx)) {
+    if (atomic_read(&(td->last_used_master_hashtable_idx)) !=
+            atomic_read(&master_hashtable_idx)) {
         DB_CALL(LOG_DEBUG4,
                 // print hashtable of thread 0 (they're all the same)
-                if (td->thread_id == 0 && atomic_read(&(td->last_used_master_hashtable_idx)) == 0) {
-                    DB_TRACE(LOG_DEBUG4, "listener %d: orig hashtable:", td->thread_id);
+                if (td->thread_id == 0 &&
+                        atomic_read(&(td->last_used_master_hashtable_idx)) == 0) {
+                    DB_TRACE(LOG_DEBUG4, "listener %d: orig hashtable:",
+                            td->thread_id);
                     DB_CALL(LOG_DEBUG4, ht_print(td->hashtable));
                 }
                 );
-        DB_TRACE(LOG_DEBUG4, "listener %d: new master hash map available (%lu)",
+        DB_TRACE(LOG_DEBUG4, "listener %d: new master hash map available "
+                "(%lu)",
                 td->thread_id, atomic_read(&master_hashtable_idx));
         DB_CALL(LOG_ERROR,
                 if (! (td->hashtable_ro_old == NULL)) {
-                    DB_TRACE(LOG_ERROR, "listener %d: td->hashtable_ro_old != NULL)",
+                    DB_TRACE(LOG_ERROR, "listener %d: "
+                            "td->hashtable_ro_old != NULL)",
                             td->thread_id);
                 }
                 );
@@ -672,9 +690,9 @@ struct s_hashable** cb_pre_pkt_read_load_balance(
         DB_TRACE(LOG_DEBUG4,"listener: %d: td->hashtable_ro_old: %p",
                 td->thread_id, td->hashtable_ro_old);
         hashtable = &(td->hashtable);
-        atomic_set(&(td->last_used_master_hashtable_idx), atomic_read(&master_hashtable_idx));
+        atomic_set(&(td->last_used_master_hashtable_idx),
+                atomic_read(&master_hashtable_idx));
 
-        /*
         DB_CALL(LOG_DEBUG4,
                 // print hashtable of thread 0 (they're all the same)
                 if (td->thread_id == 0) {
@@ -683,7 +701,6 @@ struct s_hashable** cb_pre_pkt_read_load_balance(
                     DB_CALL(LOG_DEBUG4, ht_print(*hashtable));
                 }
                 );
-        */
     }
     smp_mb__after_atomic();
 
@@ -799,7 +816,8 @@ void cb_post_pkt_send_load_balance(
         struct s_target* target) {
 
     if (features->load_balanced_dist) {
-        // NOTE: need atomic_inc for target-cnt as it is shared between all threads
+        // NOTE: need atomic_inc for target-cnt as
+        // it is shared between all threads
 
         smp_mb__before_atomic();
         if (features->lb_bytecnt_based) {
@@ -825,7 +843,8 @@ void cb_shutdown_load_balance(
         struct s_hashable** hashtable,
         struct s_thread_data* td) {
 
-    DB_TRACE(LOG_DEBUG4, "thread: %u, *hashtable: %p, td->hashtable_ro: %p, td->hashtable_ro_old: %p",
+    DB_TRACE(LOG_DEBUG4, "thread: %u, *hashtable: %p, td->hashtable_ro: %p, "
+            "td->hashtable_ro_old: %p",
             td->thread_id,
             *hashtable,
             td->hashtable_ro,
@@ -926,8 +945,16 @@ void *tee(void *arg0) {
             continue;
         }
 #endif
-        if ((numbytes = recvfrom(td->sockfd, data, BUFLEN-sizeof(struct iphdr)-sizeof(struct udphdr), 0,
-                (struct sockaddr *)&source_addr, &addr_len)) == -1) {
+
+        numbytes = recvfrom(
+                td->sockfd,
+                data,
+                BUFLEN-sizeof(struct iphdr)-sizeof(struct udphdr),
+                0,
+                (struct sockaddr *)&source_addr,
+                &addr_len);
+
+        if (numbytes == -1) {
             perror("recvfrom");
             continue;
         }
@@ -994,14 +1021,16 @@ void *tee(void *arg0) {
             DB_CALL(LOG_DEBUG0,
                     char addrbuf0[INET6_ADDRSTRLEN];
                     char addrbuf1[INET6_ADDRSTRLEN];
-                    DB_TRACE(LOG_DEBUG0, "listener %d: got packet from %s:%d",
+                    DB_TRACE(LOG_DEBUG0, "listener %d: "
+                            "got packet from %s:%d",
                             td->thread_id,
                             get_ip(&source_addr, addrbuf0),
                             get_port(&source_addr));
-                    DB_TRACE(LOG_DEBUG0, "listener %d: packet is %d bytes long",
+                    DB_TRACE(LOG_DEBUG0, "listener %d: "
+                            "packet is %d bytes long",
                             td->thread_id, numbytes);
-                    DB_TRACE(LOG_DEBUG0, "listener %d: sending packet: %s:%u "
-                            "=> %s:%u: len: %u",
+                    DB_TRACE(LOG_DEBUG0, "listener %d: "
+                            "sending packet: %s:%u => %s:%u: len: %u",
                             td->thread_id,
                             get_ip4_uint(iph->saddr, addrbuf0),
                             get_port4_uint(udph->source),
@@ -1041,7 +1070,11 @@ void *tee(void *arg0) {
                     // callback post packet send
                     switch (opcode) {
                         case OPCODE_LOAD_BALANCE:
-                            cb_post_pkt_send_load_balance(features, written, ht_e, target);
+                            cb_post_pkt_send_load_balance(
+                                    features,
+                                    written,
+                                    ht_e,
+                                    target);
                             break;
                         case OPCODE_DUPLICATE:
                             cb_post_pkt_send_duplicate();
@@ -1053,7 +1086,8 @@ void *tee(void *arg0) {
                         DB_CALL(LOG_ERROR,
                                 char addrbuf0[INET6_ADDRSTRLEN];
                                 char addrbuf1[INET6_ADDRSTRLEN];
-                                DB_TRACE(LOG_ERROR, "listener %d: short write: "
+                                DB_TRACE(LOG_ERROR, "listener %d: "
+                                        "short write: "
                                         "sent packet: %s:%u => %s:%u: "
                                         "len: %u written: %d",
                                         td->thread_id,
@@ -1069,7 +1103,8 @@ void *tee(void *arg0) {
             } while (retval <= 0);
 #endif
             // check whether features->duplicate == 1
-            // if yes, iterate over remaining targets and also send packets to them
+            // if yes, iterate over remaining targets and
+            // also send packets to them
             if (!(features->duplicate))
                 break;
         }
@@ -1089,7 +1124,12 @@ void *tee(void *arg0) {
     return NULL;
 }
 
-int setsocksize(int s, int level, int optname, void *optval, socklen_t optlen) {
+int setsocksize(
+        int s,
+        int level,
+        int optname,
+        void *optval,
+        socklen_t optlen) {
     int ret;
     socklen_t len = sizeof(socklen_t);
     socklen_t value;
@@ -1110,7 +1150,10 @@ int setsocksize(int s, int level, int optname, void *optval, socklen_t optlen) {
     return ret;
 }
 
-int split_addr(const char* addr, char* ip, uint16_t* port) {
+int split_addr(
+        const char* addr,
+        char* ip,
+        uint16_t* port) {
     char target = ':';
     char *result;
 
@@ -1124,7 +1167,10 @@ int split_addr(const char* addr, char* ip, uint16_t* port) {
     return 0;
 }
 
-int prepare_sending_socket(struct sockaddr *addr, socklen_t len, uint32_t pipe_size) {
+int prepare_sending_socket(
+        struct sockaddr *addr,
+        socklen_t len,
+        uint32_t pipe_size) {
     int s = 0;
 
     if ((s = socket(addr->sa_family, SOCK_RAW, IPPROTO_RAW)) == -1) {
@@ -1186,21 +1232,26 @@ void init_sending_sockets(struct s_target* targets,
         split_addr(raw_targets[recv_idx], addrbuf, &portbuf);
 
         ((struct sockaddr_in*)&(target->dest))->sin_family = AF_INET;
-        ((struct sockaddr_in*)&(target->dest))->sin_addr.s_addr = inet_addr(addrbuf);
+        ((struct sockaddr_in*)&(target->dest))->sin_addr.s_addr = inet_addr(
+                addrbuf);
         ((struct sockaddr_in*)&(target->dest))->sin_port = htons(portbuf);
 
         sa = (struct sockaddr *) &target->dest;
         target->dest_len = sizeof(target->dest);
 
         if (sa->sa_family != 0) {
-            if ((err = getnameinfo(sa, target->dest_len, dest_addr, sizeof(dest_addr),
-                    dest_serv, sizeof(dest_serv), NI_NUMERICHOST)) == -1) {
+            if ((err = getnameinfo(sa, target->dest_len, dest_addr,
+                    sizeof(dest_addr), dest_serv, sizeof(dest_serv),
+                    NI_NUMERICHOST)) == -1) {
                 DB_TRACE(LOG_CRITICAL,"getnameinfo: %d", err);
                 exit(1);
             }
         }
 
-        target->fd = prepare_sending_socket((struct sockaddr *) &target->dest, target->dest_len, pipe_size);
+        target->fd = prepare_sending_socket(
+                (struct sockaddr *)&target->dest,
+                target->dest_len,
+                pipe_size);
 
         DB_TRACE(LOG_INFO, "receiver: %s:%d :: fd: %d",
                 get_ip((struct sockaddr_storage *)&(target->dest), addrbuf),
@@ -1237,9 +1288,11 @@ int open_listener_socket(char* laddr, int lport, uint32_t pipe_size) {
                 obtained, pipe_size, saved);
     }
 
-    setsockopt(lsock, SOL_SOCKET, SO_REUSEADDR, (void *)&lsock_option, sizeof(lsock_option));
+    setsockopt(lsock, SOL_SOCKET, SO_REUSEADDR,
+            (void *)&lsock_option, sizeof(lsock_option));
 
-    if (bind(lsock, (struct sockaddr *)&listener_addr, sizeof(listener_addr)) == -1) {
+    if (bind(lsock, (struct sockaddr *)&listener_addr,
+                sizeof(listener_addr)) == -1) {
         close(lsock);
         perror("listener: bind");
         return -1;
@@ -1261,7 +1314,8 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
     struct s_hashable* ht_e_best = NULL;
 
     // create a copy of current counters
-    // this allows for the modification independent of ongoing forwarding of packets
+    // this allows for the modification
+    // independent of ongoing forwarding of packets
     uint64_t per_target_item_cnt[MAXTHREADS];
 
     uint16_t target_min_idx;
@@ -1288,7 +1342,8 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
         return;
 
     // create a copy of current counters
-    // this allows for the modification independent of ongoing forwarding of packets
+    // this allows for the modification
+    // independent of ongoing forwarding of packets
     smp_mb__before_atomic();
     for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
         per_target_item_cnt[cnt] = atomic_read(&(tds[0].targets[cnt].itemcnt));
@@ -1327,7 +1382,8 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
                 cnt, tds[cnt].hashtable, *master_hashtable);
         smp_mb__before_atomic();
         for(s=tds[cnt].hashtable; s != NULL; s=s->hh.next) {
-            // only copy ht_e if it has seen any items within the last iteration
+            // only copy ht_e if it has seen any items
+            // within the last iteration
             if (atomic_read(&(s->itemcnt))) {
                 ht_get_add(master_hashtable, s->key, &(s->source), s->target,
                         atomic_read(&(s->itemcnt)), 1, 1);
@@ -1347,7 +1403,8 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
     DB_CALL(LOG_INFO,
             char buf[DEBUG_OUTPUT_BUFLEN];
             uint8_t buf_cnt = 0;
-            // only print stats if there were any forwarded items since last optimization iteration
+            // only print stats if there were any forwarded items
+            // since last optimization iteration
             if (tot_cnt) {
                 DB_TRACE(LOG_INFO, "lb cnt stats. ideal=%.4f "
                         "thresh=[%.4f, %.4f] tot=%lu",
@@ -1381,19 +1438,19 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
                         buf_cnt = snprintf(buf, DEBUG_OUTPUT_BUFLEN - buf_cnt,
                                 "\n\t");
                 }
-                /*
                 DB_CALL(LOG_DEBUG6,
                         if (DEBUG_OUTPUT_BUFLEN - buf_cnt > 0) {
-                            buf_cnt = snprintf(buf, DEBUG_OUTPUT_BUFLEN - buf_cnt,
+                            buf_cnt = snprintf(buf,
+                                    DEBUG_OUTPUT_BUFLEN - buf_cnt,
                                     "\ntarget source mapping:\n");
                         }
                         ht_print(*master_hashtable);
                         if (DEBUG_OUTPUT_BUFLEN - buf_cnt > 0) {
-                            buf_cnt = snprintf(buf, DEBUG_OUTPUT_BUFLEN - buf_cnt,
+                            buf_cnt = snprintf(buf,
+                                    DEBUG_OUTPUT_BUFLEN - buf_cnt,
                                     "\n");
                         }
                         );
-                */
                 DB_TRACE(LOG_INFO, buf);
             }
             );
@@ -1409,7 +1466,9 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
         // has more than one source
         found_first_valid_target = 0;
         for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
-            if (ht_target_count(*master_hashtable, &(tds[0].targets[cnt])) > 1 &&
+            if (ht_target_count(
+                            *master_hashtable,
+                            &(tds[0].targets[cnt])) > 1 &&
                     (! invalidated_targets[cnt])) {
                 target_max_idx = cnt;
                 found_first_valid_target = 1;
@@ -1420,11 +1479,11 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
         // catch a corner case: if all targets have equal or less than one
         // source, then the above loop will set target 0 as target_max_idx
         // which is it's initialization value but which also is, in this case,
-        // wrong. so, we invalidate this target here so that is not being considered
-        // as a valid target to shift traffic away from.
+        // wrong. so, we invalidate this target here so that is not being
+        // considered as a valid target to shift traffic away from.
         // in essence, this disables any load balancing for such a setup - the
-        // only thing that will happen is that each source gets mapped to one distinct
-        // target.
+        // only thing that will happen is that each source gets mapped to one
+        // distinct target.
         if (found_first_valid_target == 0 && target_max_idx == 0)
             invalidated_targets[target_max_idx] = 1;
 
@@ -1438,18 +1497,21 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
                 target_max_idx = cnt;
         }
 
-        // if target_max is in the invalidated_targets set, abort optimization as
-        // we do not have a valid target
+        // if target_max is in the invalidated_targets set,
+        // abort optimization as we do not have a valid target
         if (invalidated_targets[target_max_idx])
             break;
 
-        // min and max target are the same (and thus all other ones with respect to min, max)
-        // abort optimization in this case since shifting from and to the same target does not make sense
+        // min and max target are the same
+        // (and thus all other ones with respect to min, max)
+        // abort optimization in this case since shifting from and
+        // to the same target does not make sense
         if (target_min_idx == target_max_idx)
             break;
 
         target_avg = per_target_item_cnt[target_min_idx] / (double)tot_cnt;
-        if (((target_avg / ideal_avg) < 1) && (1 - (target_avg / ideal_avg) > reorder_threshold))
+        if (((target_avg / ideal_avg) < 1) &&
+                (1 - (target_avg / ideal_avg) > reorder_threshold))
             hit_reordering_threshold = 1;
         else
             hit_reordering_threshold = 0;
@@ -1481,14 +1543,18 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
                 );
 
         // calculate ideal excess lines/hits
-        // TODO: shouldn't this be changed to excess_items = target_avg / ideal_avg?
+        // TODO: shouldn't this be changed to
+        // TODO: excess_items = target_avg / ideal_avg?
 
-        excess_items = per_target_item_cnt[target_max_idx] - per_target_item_cnt[target_min_idx];
-        // divide excess_items by two to evenly distriube excess items. if this is not done,
-        // target_min_idx would immediately be an output with the most traffic
+        excess_items = per_target_item_cnt[target_max_idx] - \
+                       per_target_item_cnt[target_min_idx];
+        // divide excess_items by two to evenly distriube excess items.
+        // if this is not done, target_min_idx would immediately be
+        // an output with the most traffic
         excess_items = excess_items / 2;
 
-        // if excess_items is 0, abort optimization (shifting 0 from somewhere to somewhere else is mindless)
+        // if excess_items is 0, abort optimization
+        // (shifting 0 from somewhere to somewhere else is mindless)
         if (! excess_items)
             break;
 
@@ -1502,8 +1568,11 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
                 excess_items);
 
         // find hitter in biggest target which is closest to excess_items
-        ht_find_best(*master_hashtable, &(tds[0].targets[target_max_idx]), excess_items, &ht_e_best);
-
+        ht_find_best(
+                *master_hashtable,
+                &(tds[0].targets[target_max_idx]),
+                excess_items,
+                &ht_e_best);
 
         // cannot find any matching hashtable entry. abort
         if (ht_e_best == NULL) {
@@ -1546,8 +1615,10 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
                     0);
 
             // refresh counters
-            per_target_item_cnt[target_max_idx] -= atomic_read(&(ht_e_best->itemcnt));
-            per_target_item_cnt[target_min_idx] += atomic_read(&(ht_e_best->itemcnt));
+            per_target_item_cnt[target_max_idx] -= \
+                    atomic_read(&(ht_e_best->itemcnt));
+            per_target_item_cnt[target_min_idx] += \
+                    atomic_read(&(ht_e_best->itemcnt));
         }
     } // end of for (itcnt = 0; itcnt < MAXOPTIMIZATIONITERATIONS; itcnt++) {
 
@@ -1556,7 +1627,8 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
     do {
         threads_reading_from_master = 0;
         for (cnt = 0; cnt < num_threads; cnt++ ) {
-            if (atomic_read(&(tds[cnt].last_used_master_hashtable_idx)) != atomic_read(&master_hashtable_idx))
+            if (atomic_read(&(tds[cnt].last_used_master_hashtable_idx)) != \
+                    atomic_read(&master_hashtable_idx))
                 threads_reading_from_master = 1;
         }
 
@@ -1582,7 +1654,8 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
 
     smp_mb__after_atomic();
     ht_delete_all(master_hashtable);
-    // increase hashtable version to signal threads that a new version is available
+    // increase hashtable version to signal threads that
+    // a new version is available
     smp_mb__before_atomic();
     atomic_inc(&master_hashtable_idx);
     smp_mb__after_atomic();
@@ -1630,7 +1703,8 @@ uint8_t deduplicate_packet(
         atomic_t now) {
     uint8_t drop_pkt = 0;
 
-    struct s_deduplication_hashable** deduplication_hashtable = td->deduplication_hashtable;
+    struct s_deduplication_hashable** deduplication_hashtable = \
+            td->deduplication_hashtable;
 
     // TODO: implement hash-based deduplication
     // TODO: introduce cfg. limits like time or number of packets to track
@@ -1735,7 +1809,8 @@ uint8_t deduplicate_packet(
                         "now: %lu, last_seen: %lu, source: %s:%u@%u, "
                         "key: (%u, %u, %u)",
                         tnow,
-                        atomic_read(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen)),
+                        atomic_read(
+                                &(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen)),
                         get_ip(source_addr, addrbuf0),
                         get_port(source_addr),
                         key.id,
@@ -1760,7 +1835,8 @@ void deduplicate_maintenance(
         double resize_factor,
         pthread_rwlock_t* deduplication_lock) {
 
-    struct s_deduplication_hashable** deduplication_hashtable = tds->deduplication_hashtable;
+    struct s_deduplication_hashable** deduplication_hashtable = \
+            tds->deduplication_hashtable;
     struct s_deduplication_hashable *ht_e = NULL;
     uint32_t timeout = tds->feature_settings.deduplication_timeout;
 
@@ -1808,8 +1884,9 @@ void deduplicate_maintenance(
             ht_e->update_counter_timestamp_start = tnow;
         }
 
-        if (ht_e->update_frequency > ht_e->dedup_ht_size/2.0/timeout) {
-            dedup_ht_size = (uint32_t)(ht_e->update_frequency*2.0*timeout*resize_factor);
+        if (ht_e->update_frequency > ht_e->dedup_ht_size / 2.0 / timeout) {
+            dedup_ht_size = (uint32_t)(
+                    ht_e->update_frequency * 2.0 * timeout * resize_factor);
 
             DB_TRACE(LOG_DEBUG6, "increasing inner ht from %u to %u due to "
                     "update frequency %fHz and packet timeout: %us",
