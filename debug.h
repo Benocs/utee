@@ -34,6 +34,7 @@
 #define LOG_DEBUG       10
 #define LOG_INFO        20
 #define LOG_WARN        30
+#define LOG_WARNING     LOG_WARN
 #define LOG_ERROR       40
 #define LOG_CRITICAL    50
 
