@@ -219,12 +219,12 @@ int main(int argc, char *argv[]) {
             }
         );
 
+    DB_TRACE(LOG_ALL, "using debug level: %d", db_getdebug());
+
     num_targets = argc - optind;
     if (mode == 0xFF || num_threads == 0 || listenport == 0 ||
             (num_threads > MAXTHREADS) || (num_targets == 0))
         usage(argc, argv);
-
-    DB_TRACE(LOG_ALL, "using debug level: %d", db_getdebug());
 
     signal(SIGUSR1, sig_handler_toggle_optional_output);
     signal(SIGTERM, sig_handler_shutdown);

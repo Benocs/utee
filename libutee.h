@@ -69,6 +69,8 @@
 #define MAXTHREADS 1024
 #define MAXOPTIMIZATIONITERATIONS 500
 
+#define DEBUG_OUTPUT_BUFLEN 4096
+
 #define HASH_NOP(key, keylen, hashv)                                          \
 do {                                                                          \
     hashv = *key;                                                             \
@@ -102,6 +104,11 @@ do {                                                                            
 #endif
 
 uint64_t create_ht_key_from_addr(struct sockaddr_storage* addr);
+
+#define EMA(ema, alpha, old_value, new_value)                                 \
+do {                                                                          \
+    ema = ((double)alpha * new_value) + (1.0 - alpha) * (double)old_value;    \
+} while(0)
 
 struct s_target {
     struct sockaddr_storage dest;
@@ -226,11 +233,11 @@ struct s_hashable* ht_get_add(struct s_hashable **ht, uint64_t key,
         struct sockaddr_storage* source, struct s_target* target,
         uint64_t itemcnt, uint8_t overwrite, uint8_t sum_itemcnt);
 
-void ht_iterate(struct s_hashable *ht);
+void ht_iter(struct s_hashable *ht, void (callback)(struct s_hashable*));
 
-void ht_find_max(struct s_hashable *ht,
-        struct s_target *target,
-        struct s_hashable **ht_e_max);
+void hte_print(struct s_hashable *ht_e);
+
+void ht_print(struct s_hashable *ht);
 
 void ht_find_best(struct s_hashable *ht,
         struct s_target *target,
@@ -311,8 +318,6 @@ void deduplicate_maintenance(
 void sig_handler_toggle_optional_output(int signum);
 void sig_handler_shutdown(int signum);
 void sig_handler_ignore(int signum);
-
-double ema(double alpha, double old_value, double new_value);
 
 // variables that are changed when a signal arrives
 extern volatile uint8_t optional_output_enabled;
