@@ -38,6 +38,7 @@
 #include <sys/select.h>
 #include <time.h>
 
+#include "debug.h"
 #include "libutee.h"
 
 // variables that are changed when a signal arrives

@@ -109,7 +109,7 @@
 ** arguments.  Normally used to selectively execute printing functions.
 */
 #define DB_CALL(level, ...)\
-            do { if (DB_ACTIVE && db_getdebug() >= (level)) { __VA_ARGS__; } } while (0)
+            do { if (DB_ACTIVE && (level) >= db_getdebug()) { __VA_ARGS__; } } while (0)
 
 /*
 ** DB_TRACKING(); uses the FEATURE macro from klduge.h to embed a string
@@ -175,7 +175,7 @@ extern const char *db_indent(void);
 ** printing functions.
 */
 #define DB_MDCALL(subsys, level, ...) \
-            do { if (DB_ACTIVE && db_mdgetdebug(subsys) >= (level)) { __VA_ARGS__; } } while (0)
+            do { if (DB_ACTIVE && (level) >= db_mdgetdebug(subsys)) { __VA_ARGS__; } } while (0)
 
 extern int      db_mdgetdebug(int subsys);
 extern int      db_mdparsearg(char *arg);
