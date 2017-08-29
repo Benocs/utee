@@ -65,28 +65,33 @@
         if (DB_ACTIVE) {                                                    \
             char msgbuf[DB_TRACE_BUF_SIZE];                                 \
             char loglvlbuf[DB_TRACE_LOGLVL_BUF_SIZE];                       \
-            switch (level) {                                                \
-                case LOG_DEBUG:                                             \
-                    snprintf(loglvlbuf, sizeof(loglvlbuf), "DEBUG");        \
-                    break;                                                  \
-                case LOG_INFO:                                              \
-                    snprintf(loglvlbuf, sizeof(loglvlbuf), "INFO");         \
-                    break;                                                  \
-                case LOG_WARN:                                              \
-                    snprintf(loglvlbuf, sizeof(loglvlbuf), "WARN");         \
-                    break;                                                  \
-                case LOG_ERROR:                                             \
-                    snprintf(loglvlbuf, sizeof(loglvlbuf), "ERROR");        \
-                    break;                                                  \
-                case LOG_CRITICAL:                                          \
-                    snprintf(loglvlbuf, sizeof(loglvlbuf), "CRITICAL");     \
-                    break;                                                  \
-                case LOG_ALL:                                               \
-                    snprintf(loglvlbuf, sizeof(loglvlbuf), "ALL");          \
-                    break;                                                  \
-                default:                                                    \
-                    snprintf(loglvlbuf, sizeof(loglvlbuf), "%d", level);    \
-                    break;                                                  \
+            if (level < LOG_DEBUG) {                                        \
+                snprintf(loglvlbuf, sizeof(loglvlbuf), "DEBUG%d", level);   \
+            }                                                               \
+            else {                                                          \
+                switch (level) {                                            \
+                    case LOG_DEBUG:                                         \
+                        snprintf(loglvlbuf, sizeof(loglvlbuf), "DEBUG");    \
+                        break;                                              \
+                    case LOG_INFO:                                          \
+                        snprintf(loglvlbuf, sizeof(loglvlbuf), "INFO");     \
+                        break;                                              \
+                    case LOG_WARN:                                          \
+                        snprintf(loglvlbuf, sizeof(loglvlbuf), "WARN");     \
+                        break;                                              \
+                    case LOG_ERROR:                                         \
+                        snprintf(loglvlbuf, sizeof(loglvlbuf), "ERROR");    \
+                        break;                                              \
+                    case LOG_CRITICAL:                                      \
+                        snprintf(loglvlbuf, sizeof(loglvlbuf), "CRITICAL"); \
+                        break;                                              \
+                    case LOG_ALL:                                           \
+                        snprintf(loglvlbuf, sizeof(loglvlbuf), "ALL");      \
+                        break;                                              \
+                    default:                                                \
+                        snprintf(loglvlbuf, sizeof(loglvlbuf), "%d", level);\
+                        break;                                              \
+                }                                                           \
             }                                                               \
             snprintf(msgbuf, sizeof(msgbuf), __VA_ARGS__);                  \
             db_print(level, "%lu - %s - %s:%d:%s(): %s\n",                  \
