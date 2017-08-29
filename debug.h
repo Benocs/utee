@@ -21,6 +21,16 @@
 #define DB_ACTIVE 0
 #endif /* DEBUG */
 
+#define LOG_DEBUG0       0
+#define LOG_DEBUG1       1
+#define LOG_DEBUG2       2
+#define LOG_DEBUG3       3
+#define LOG_DEBUG4       4
+#define LOG_DEBUG5       5
+#define LOG_DEBUG6       6
+#define LOG_DEBUG7       7
+#define LOG_DEBUG8       8
+#define LOG_DEBUG9       9
 #define LOG_DEBUG       10
 #define LOG_INFO        20
 #define LOG_WARN        30
