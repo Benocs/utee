@@ -15,7 +15,8 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301,
+ * USA.
  *
  * support for:
  *  * round-robin load-balance
@@ -24,7 +25,8 @@
  *  * packet deduplication in addition to either load-balance or duplicate
  *
  * based on:
- *  * http://pastebin.com/CG8zscaA (Spoofed UDP Flooder v2.5.3 FINAL by ohnoes1479)
+ *  * http://pastebin.com/CG8zscaA (Spoofed UDP Flooder v2.5.3 FINAL by
+ *    ohnoes1479)
  *  * http://beej.us/guide/bgnet/
  */
 
@@ -98,8 +100,10 @@ int main(int argc, char *argv[]) {
     struct s_hashable* master_hashtable = NULL;
     struct s_deduplication_hashable* deduplication_hashtable = NULL;
 
-    // default: load balance every 50e6 lines, min difference between targets: 10%
+    // default: load balance every 50e6 lines
     uint64_t threshold = 50e6;
+    // default: min difference between targets for load-balancing to kick in:
+    // 10%
     double reorder_threshold = 0.1;
 
     // 64 MB SND/RCV buffers
@@ -124,7 +128,8 @@ int main(int argc, char *argv[]) {
             break;
         case 'l':
             split_addr(optarg, listenaddr, &listenport);
-            DB_TRACE(LOG_INFO, "listen address: %s:%u", listenaddr, listenport);
+            DB_TRACE(LOG_INFO, "listen address: %s:%u",
+                    listenaddr, listenport);
         break;
         case 'H':
             hash_based_dist_enabled = 1;
@@ -305,8 +310,6 @@ int main(int argc, char *argv[]) {
                     deduplication_frequency_reset_interval,
                     deduplication_inner_ht_resize_factor,
                     &deduplication_lock);
-
-            // TODO: check whether to delete old values from deduplication_hashtable
         }
 
         sleep(1);
