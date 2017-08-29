@@ -2,7 +2,7 @@ utee - transparent UDP tee proxy
 ================================
 
 Utee is a tool to transparently (preserve the source IP) replicate a UDP stream
-to one or more destinations. It supports to modes of operation: tee and
+to one or more destinations. It supports two modes of operation: tee and
 distribution.
 
 In tee mode, utee duplicates incoming traffic and sends it to the
@@ -51,7 +51,7 @@ for all destinations. For this, utee keeps a mapping which source is being
 sent to which destination and counts the number of replicated packets for
 each such source-destination pair. After a certain configurable amount of
 packets, utee adjusts its mapping in such a way that each destination gets
-roughly the same amount of packets. Here, it is assumed that the distribution
+roughly the same amount of packets. Here it is assumed that the distribution
 of the packet rate over the sources stays more or less constant. This check
 whether any remapping is necessary happens regularly.
 
