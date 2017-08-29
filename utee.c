@@ -58,14 +58,38 @@
 #endif
 
 void usage(int argc, char *argv[]) {
-    fprintf(stderr, "usage: %s -l <listenaddr:port> -m <r|d> -n <num_threads> "
-                    "[-H] [-L] <targetaddr:port> [targetaddr:port [...]]\n"
-                    "\tNote: num_threads must be >= number of target "
-                    "addresses\n\n"
-                    "repository revision: %s\n"
-                    "compile time:        %s\n"
-                    "source MD5 sum:      %s\n",
-                    argv[0], GIT_REVISION, COMPILE_TIME, MD5_SUM);
+    fprintf(stderr,
+            "usage: %s\n"
+            "\t-l <listenaddr:port>\n"
+            "\t-m <r|d>\n"
+            "\t-n <num_threads>\n"
+            "\t<targetaddr:port> [targetaddr:port [...]]\n"
+            "\n\tNote: num_threads must be >= number of target "
+            "addresses\n"
+            "\n\toptional feature switches for all modes\n"
+            "\t[-D]\tdeduplicate packets\n"
+            "\n\toptional feature switches for mode 'distribute'\n"
+            "\t[-H]\thash based target selection\n"
+            "\t[-L]\thash based load balancing of targets\n"
+            "\n\toptional load balance configuration\n"
+            "\t[-i <load balance interval>]\n"
+            "\t[-t <load balance inter-target threshold>]\n"
+            "\t[-b]\tuse byte count instead of packets to measure load\n"
+            "\n\toptional deduplication configuration\n"
+            "\t[-I <deduplication maintenance interval>]\n"
+            "\t[-p <deduplication packet source index>]\n"
+            "\t[-P <deduplication packet id index>]\n"
+            "\t[-r <deduplication frequency update interval>]\n"
+            "\t[-R <deduplication inner hash table resize factor>]\n"
+            "\t[-T <deduplication timeout>]\n"
+            "\n\t"
+            "\n\toptional logging configuration\n"
+            "\t[-d <log level>]\n"
+            "\n"
+            "repository revision: %s\n"
+            "compile time:        %s\n"
+            "source MD5 sum:      %s\n",
+            argv[0], GIT_REVISION, COMPILE_TIME, MD5_SUM);
     exit(1);
 }
 
