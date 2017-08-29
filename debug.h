@@ -81,6 +81,9 @@
                 case LOG_CRITICAL:                                          \
                     snprintf(loglvlbuf, sizeof(loglvlbuf), "CRITICAL");     \
                     break;                                                  \
+                case LOG_ALL:                                               \
+                    snprintf(loglvlbuf, sizeof(loglvlbuf), "ALL");          \
+                    break;                                                  \
                 default:                                                    \
                     snprintf(loglvlbuf, sizeof(loglvlbuf), "%d", level);    \
                     break;                                                  \
