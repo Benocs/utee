@@ -38,8 +38,10 @@
 #include <string.h>
 #include <signal.h>
 #include <stdint.h>
+#include <strings.h>
 #include <pthread.h>
 
+#include "utee.h"
 #include "debug.h"
 #include "libutee.h"
 
