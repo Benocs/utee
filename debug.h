@@ -21,24 +21,24 @@
 #define DB_ACTIVE 0
 #endif /* DEBUG */
 
-#define LOG_DEBUG0       0
-#define LOG_DEBUG1       1
-#define LOG_DEBUG2       2
-#define LOG_DEBUG3       3
-#define LOG_DEBUG4       4
-#define LOG_DEBUG5       5
-#define LOG_DEBUG6       6
-#define LOG_DEBUG7       7
-#define LOG_DEBUG8       8
-#define LOG_DEBUG9       9
-#define LOG_DEBUG       10
-#define LOG_INFO        20
+#define LOG_ALL          0
+#define LOG_CRITICAL    10
+#define LOG_ERROR       20
 #define LOG_WARN        30
 #define LOG_WARNING     LOG_WARN
-#define LOG_ERROR       40
-#define LOG_CRITICAL    50
+#define LOG_INFO        40
+#define LOG_DEBUG       50
 
-#define LOG_ALL         0xFF
+#define LOG_DEBUG0      50
+#define LOG_DEBUG1      51
+#define LOG_DEBUG2      52
+#define LOG_DEBUG3      53
+#define LOG_DEBUG4      54
+#define LOG_DEBUG5      55
+#define LOG_DEBUG6      56
+#define LOG_DEBUG7      57
+#define LOG_DEBUG8      58
+#define LOG_DEBUG9      59
 
 #define DB_TRACE_BUF_SIZE 255
 #define DB_TRACE_LOGLVL_BUF_SIZE 10
@@ -65,8 +65,9 @@
         if (DB_ACTIVE) {                                                    \
             char msgbuf[DB_TRACE_BUF_SIZE];                                 \
             char loglvlbuf[DB_TRACE_LOGLVL_BUF_SIZE];                       \
-            if (level < LOG_DEBUG) {                                        \
-                snprintf(loglvlbuf, sizeof(loglvlbuf), "DEBUG%d", level);   \
+            if (level >= LOG_DEBUG && level <= LOG_DEBUG9) {                \
+                snprintf(loglvlbuf, sizeof(loglvlbuf), "DEBUG%d",           \
+                        (level-LOG_DEBUG));                                 \
             }                                                               \
             else {                                                          \
                 switch (level) {                                            \
@@ -109,7 +110,7 @@
 ** arguments.  Normally used to selectively execute printing functions.
 */
 #define DB_CALL(level, ...)\
-            do { if (DB_ACTIVE && (level) >= db_getdebug()) { __VA_ARGS__; } } while (0)
+            do { if (DB_ACTIVE && db_getdebug() >= (level)) { __VA_ARGS__; } } while (0)
 
 /*
 ** DB_TRACKING(); uses the FEATURE macro from klduge.h to embed a string
@@ -175,7 +176,7 @@ extern const char *db_indent(void);
 ** printing functions.
 */
 #define DB_MDCALL(subsys, level, ...) \
-            do { if (DB_ACTIVE && (level) >= db_mdgetdebug(subsys)) { __VA_ARGS__; } } while (0)
+            do { if (DB_ACTIVE && db_mdgetdebug(subsys) >= level) { __VA_ARGS__; } } while (0)
 
 extern int      db_mdgetdebug(int subsys);
 extern int      db_mdparsearg(char *arg);

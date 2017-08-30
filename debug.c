@@ -75,7 +75,7 @@ void db_setfilename(const char *nfn)
 */
 void db_print(int level, const char *fmt,...)
 {
-    if (level >= debug)
+    if (debug >= level)
     {
         va_list args;
         FILE *fp = db_getfileptr();

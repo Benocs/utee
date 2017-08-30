@@ -187,7 +187,7 @@ struct s_target* hash_based_output(uint64_t key, struct s_thread_data* td) {
             target
             );
 
-    DB_TRACE(LOG_DEBUG0, "hash_based_output: key: %lx\ttarget: %u",
+    DB_TRACE(LOG_DEBUG9, "hash_based_output: key: %lx\ttarget: %u",
             key, target);
     return (struct s_target*)&(td->targets[target]);
 }
@@ -208,10 +208,10 @@ struct s_hashable* ht_get_add(struct s_hashable **ht, uint64_t key,
 
     HASH_FIND(hh, *ht, &key, sizeof(key), ht_e);
     if (ht_e == NULL) {
-        DB_CALL(LOG_DEBUG2,
+        DB_CALL(LOG_DEBUG7,
                 char addrbuf0[INET6_ADDRSTRLEN];
                 char addrbuf1[INET6_ADDRSTRLEN];
-                DB_TRACE(LOG_DEBUG2, "ht: key: 0x%lx, addr: %s:%u not found. "
+                DB_TRACE(LOG_DEBUG7, "ht: key: 0x%lx, addr: %s:%u not found. "
                         "adding output: %s:%u",
                         key,
                         get_ip(source, addrbuf0),
@@ -246,10 +246,10 @@ struct s_hashable* ht_get_add(struct s_hashable **ht, uint64_t key,
         }
         smp_mb__after_atomic();
 
-        DB_CALL(LOG_DEBUG0,
+        DB_CALL(LOG_DEBUG9,
                 char addrbuf0[INET6_ADDRSTRLEN];
                 char addrbuf1[INET6_ADDRSTRLEN];
-                DB_TRACE(LOG_DEBUG0, "ht: key: 0x%lx, addr: %s:%u found. "
+                DB_TRACE(LOG_DEBUG9, "ht: key: 0x%lx, addr: %s:%u found. "
                         "overwriting. using new output: %s:%u",
                         key,
                         get_ip(source, addrbuf0),
@@ -260,11 +260,11 @@ struct s_hashable* ht_get_add(struct s_hashable **ht, uint64_t key,
     }
 
     if (!added) {
-        DB_CALL(LOG_DEBUG2,
+        DB_CALL(LOG_DEBUG7,
                 char addrbuf0[INET6_ADDRSTRLEN];
                 char addrbuf1[INET6_ADDRSTRLEN];
                 char addrbuf2[INET6_ADDRSTRLEN];
-                DB_TRACE(LOG_DEBUG2, "ht: key: 0x%lx, addr: %s:%u found. "
+                DB_TRACE(LOG_DEBUG7, "ht: key: 0x%lx, addr: %s:%u found. "
                         "not overwriting. using output: %s:%u. ht_key: 0x%lx, "
                         "ht_addr: %s:%u",
                         key,
@@ -319,7 +319,7 @@ void ht_find_best(struct s_hashable *ht,
 
     uint64_t tcnt = 0;
 
-    DB_TRACE(LOG_DEBUG4, "excess_items: %lu", excess_items);
+    DB_TRACE(LOG_DEBUG5, "excess_items: %lu", excess_items);
 
     smp_mb__before_atomic();
     for(s=ht; s != NULL; s=s->hh.next) {
@@ -327,11 +327,11 @@ void ht_find_best(struct s_hashable *ht,
         if (s->target != target)
             continue;
 
-        DB_CALL(LOG_DEBUG4,
+        DB_CALL(LOG_DEBUG5,
                 char addrbuf0[INET6_ADDRSTRLEN];
                 char addrbuf1[INET6_ADDRSTRLEN];
                 tcnt += atomic_read(&(s->itemcnt));
-                DB_TRACE(LOG_DEBUG4, "count: %lu\tkey: 0x%lx\taddr: %s:%u, "
+                DB_TRACE(LOG_DEBUG5, "count: %lu\tkey: 0x%lx\taddr: %s:%u, "
                         "target: %s:%u",
                         atomic_read(&(s->itemcnt)),
                         s->key,
@@ -356,11 +356,11 @@ void ht_find_best(struct s_hashable *ht,
 
     if (t != NULL) {
         *ht_e_best = t;
-        DB_CALL(LOG_DEBUG4,
+        DB_CALL(LOG_DEBUG5,
                 char addrbuf0[INET6_ADDRSTRLEN];
                 char addrbuf1[INET6_ADDRSTRLEN];
-                DB_TRACE(LOG_DEBUG4, "tot target items: %lu", tcnt);
-                DB_TRACE(LOG_DEBUG4, "best: count: %lu\taddr: %s:%u, "
+                DB_TRACE(LOG_DEBUG5, "tot target items: %lu", tcnt);
+                DB_TRACE(LOG_DEBUG5, "best: count: %lu\taddr: %s:%u, "
                         "target: %s:%u",
                         atomic_read(&(t->itemcnt)),
                         get_ip(&(t->source), addrbuf0),
@@ -381,9 +381,9 @@ uint32_t ht_target_count(struct s_hashable *ht, struct s_target *target) {
         if (s->target == target)
             count++;
 
-    DB_CALL(LOG_DEBUG4,
+    DB_CALL(LOG_DEBUG5,
             char addrbuf0[INET6_ADDRSTRLEN];
-            DB_TRACE(LOG_DEBUG4, "target: %s:%u, count: %u",
+            DB_TRACE(LOG_DEBUG5, "target: %s:%u, count: %u",
                     get_ip(&(target->dest), addrbuf0),
                     get_port(&(target->dest)),
                     count);
@@ -394,7 +394,7 @@ uint32_t ht_target_count(struct s_hashable *ht, struct s_target *target) {
 void ht_copy(struct s_hashable *ht_from, struct s_hashable **ht_to) {
     struct s_hashable *s;
 
-    DB_TRACE(LOG_DEBUG2, "copying hashtable. ignore ht_get_add prints");
+    DB_TRACE(LOG_DEBUG7, "copying hashtable. ignore ht_get_add prints");
     smp_mb__before_atomic();
     for(s=ht_from; s != NULL; s=s->hh.next) {
         ht_get_add(ht_to,
@@ -406,7 +406,7 @@ void ht_copy(struct s_hashable *ht_from, struct s_hashable **ht_to) {
                 0);
     }
     smp_mb__after_atomic();
-    DB_TRACE(LOG_DEBUG2, "done copying hashtable");
+    DB_TRACE(LOG_DEBUG7, "done copying hashtable");
 }
 
 void ht_reset_counters(struct s_hashable *ht) {
@@ -424,14 +424,14 @@ void ht_delete_all(struct s_hashable **ht) {
     struct s_hashable *s, *tmp;
 
     if (! (*ht == NULL)) {
-        DB_TRACE(LOG_DEBUG2, "ht: %p", ht);
+        DB_TRACE(LOG_DEBUG7, "ht: %p", ht);
         HASH_ITER(hh, *ht, s, tmp) {
-            DB_TRACE(LOG_DEBUG2, "deleting ht: %p, s: %p", *ht, s);
+            DB_TRACE(LOG_DEBUG7, "deleting ht: %p, s: %p", *ht, s);
             HASH_DEL(*ht, s);
-            DB_TRACE(LOG_DEBUG2, "freeing s: %p", s);
+            DB_TRACE(LOG_DEBUG7, "freeing s: %p", s);
             free(s);
         }
-        DB_TRACE(LOG_DEBUG2, "freeing ht: %p", *ht);
+        DB_TRACE(LOG_DEBUG7, "freeing ht: %p", *ht);
         free(*ht);
         *ht = NULL;
     }
@@ -450,12 +450,12 @@ struct s_deduplication_hashable* dedup_ht_get(
     }
 
     HASH_FIND(hh, *ht, key, sizeof(t_deduplication_hashable_key), ht_e);
-    DB_CALL(LOG_DEBUG2,
+    DB_CALL(LOG_DEBUG7,
             if (ht_e == NULL) {
-                DB_TRACE(LOG_DEBUG2, "ht: item not found");
+                DB_TRACE(LOG_DEBUG7, "ht: item not found");
             }
             else {
-                DB_TRACE(LOG_DEBUG2, "ht: item found");
+                DB_TRACE(LOG_DEBUG7, "ht: item found");
             }
             );
 
@@ -476,7 +476,7 @@ t_deduplication_inner_hashable_value* allocate_inner_ht(
     uint64_t pkt_id;
     uint32_t pkt_idx;
 
-    DB_TRACE(LOG_DEBUG3, "old_size: %u, new_size: %u",
+    DB_TRACE(LOG_DEBUG6, "old_size: %u, new_size: %u",
             old_size,
             new_size);
     inner_ht = (t_deduplication_inner_hashable_value*)
@@ -523,7 +523,7 @@ void delete_inner_ht(
         t_deduplication_inner_hashable_value* inner_ht,
         uint32_t size) {
     // NOTE: this method is not thread safe. ensure that locking happens
-    DB_TRACE(LOG_DEBUG3, "size: %u", size);
+    DB_TRACE(LOG_DEBUG6, "size: %u", size);
     free(inner_ht);
 }
 
@@ -537,7 +537,7 @@ struct s_deduplication_hashable* dedup_ht_get_add(
     ht_e = dedup_ht_get(ht, key);
 
     if (ht_e == NULL) {
-        DB_TRACE(LOG_DEBUG2, "item not found. adding");
+        DB_TRACE(LOG_DEBUG7, "item not found. adding");
         if (pthread_rwlock_wrlock(&deduplication_lock) != 0) {
             DB_TRACE(LOG_ERROR, "cannot acquire write lock");
             return NULL;
@@ -563,7 +563,7 @@ struct s_deduplication_hashable* dedup_ht_get_add(
         pthread_rwlock_unlock(&deduplication_lock);
     }
     else {
-        DB_TRACE(LOG_DEBUG2, "item found. updating counters");
+        DB_TRACE(LOG_DEBUG7, "item found. updating counters");
         if (pthread_rwlock_wrlock(&deduplication_lock) != 0) {
             DB_TRACE(LOG_ERROR, "cannot acquire write lock");
             return NULL;
@@ -571,7 +571,7 @@ struct s_deduplication_hashable* dedup_ht_get_add(
 
         ht_e->update_counter_value++;
         if (atomic_read(&now) > ht_e->update_counter_timestamp_start) {
-            DB_TRACE(LOG_DEBUG2, "update: key: %u, %u, %u counter: %u, "
+            DB_TRACE(LOG_DEBUG7, "update: key: %u, %u, %u counter: %u, "
                         "tdiff: %lu, frequency: %f",
                         ht_e->key.addr,
                         ht_e->key.port,
@@ -603,20 +603,20 @@ void dedup_ht_delete_all(struct s_deduplication_hashable **ht) {
     struct s_deduplication_hashable *s, *tmp;
 
     if (! (*ht == NULL)) {
-        DB_TRACE(LOG_DEBUG2, "ht: %p", ht);
+        DB_TRACE(LOG_DEBUG7, "ht: %p", ht);
         if (pthread_rwlock_wrlock(&deduplication_lock) != 0) {
             DB_TRACE(LOG_ERROR, "cannot acquire write lock");
             return;
         }
 
         HASH_ITER(hh, *ht, s, tmp) {
-            DB_TRACE(LOG_DEBUG2, "deleting ht: %p, s: %p", *ht, s);
+            DB_TRACE(LOG_DEBUG7, "deleting ht: %p, s: %p", *ht, s);
             delete_inner_ht((*ht)->inner_ht, (*ht)->dedup_ht_size);
             HASH_DEL(*ht, s);
-            DB_TRACE(LOG_DEBUG2, "freeing s: %p", s);
+            DB_TRACE(LOG_DEBUG7, "freeing s: %p", s);
             free(s);
         }
-        DB_TRACE(LOG_DEBUG2, "freeing ht: %p", *ht);
+        DB_TRACE(LOG_DEBUG7, "freeing ht: %p", *ht);
         free(*ht);
         *ht = NULL;
 
@@ -662,16 +662,16 @@ struct s_hashable** cb_pre_pkt_read_load_balance(
 
     if (atomic_read(&(td->last_used_master_hashtable_idx)) !=
             atomic_read(&master_hashtable_idx)) {
-        DB_CALL(LOG_DEBUG4,
+        DB_CALL(LOG_DEBUG5,
                 // print hashtable of thread 0 (they're all the same)
                 if (td->thread_id == 0 &&
                         atomic_read(&(td->last_used_master_hashtable_idx)) == 0) {
-                    DB_TRACE(LOG_DEBUG4, "listener %d: orig hashtable:",
+                    DB_TRACE(LOG_DEBUG5, "listener %d: orig hashtable:",
                             td->thread_id);
-                    DB_CALL(LOG_DEBUG4, ht_print(td->hashtable));
+                    DB_CALL(LOG_DEBUG5, ht_print(td->hashtable));
                 }
                 );
-        DB_TRACE(LOG_DEBUG4, "listener %d: new master hash map available "
+        DB_TRACE(LOG_DEBUG5, "listener %d: new master hash map available "
                 "(%lu)",
                 td->thread_id, atomic_read(&master_hashtable_idx));
         DB_CALL(LOG_ERROR,
@@ -685,20 +685,20 @@ struct s_hashable** cb_pre_pkt_read_load_balance(
         td->hashtable_ro_old = td->hashtable;
         td->hashtable = td->hashtable_ro;
         td->hashtable_ro = NULL;
-        DB_TRACE(LOG_DEBUG4,"listener: %d: set td->hashtable_ro to NULL: %p",
+        DB_TRACE(LOG_DEBUG5,"listener: %d: set td->hashtable_ro to NULL: %p",
                 td->thread_id, td->hashtable_ro);
-        DB_TRACE(LOG_DEBUG4,"listener: %d: td->hashtable_ro_old: %p",
+        DB_TRACE(LOG_DEBUG5,"listener: %d: td->hashtable_ro_old: %p",
                 td->thread_id, td->hashtable_ro_old);
         hashtable = &(td->hashtable);
         atomic_set(&(td->last_used_master_hashtable_idx),
                 atomic_read(&master_hashtable_idx));
 
-        DB_CALL(LOG_DEBUG4,
+        DB_CALL(LOG_DEBUG5,
                 // print hashtable of thread 0 (they're all the same)
                 if (td->thread_id == 0) {
-                    DB_TRACE(LOG_DEBUG4, "listener %d: new hashtable:",
+                    DB_TRACE(LOG_DEBUG5, "listener %d: new hashtable:",
                             td->thread_id);
-                    DB_CALL(LOG_DEBUG4, ht_print(*hashtable));
+                    DB_CALL(LOG_DEBUG5, ht_print(*hashtable));
                 }
                 );
     }
@@ -768,12 +768,12 @@ struct s_target*  cb_pkt_process_load_balance(
         target = (*ptr_ht_e)->target;
     }
 
-    DB_CALL(LOG_DEBUG4,
+    DB_CALL(LOG_DEBUG5,
             char addrbuf0[INET6_ADDRSTRLEN];
             if (features->hash_based_dist || features->load_balanced_dist) {
                 smp_mb__before_atomic();
             }
-            DB_TRACE(LOG_DEBUG4, "listener %d: hash result for addr: "
+            DB_TRACE(LOG_DEBUG5, "listener %d: hash result for addr: "
                     "target: %s:%u (count: %lu)",
                     td->thread_id,
                     get_ip((struct sockaddr_storage *)target_addr, addrbuf0),
@@ -843,7 +843,7 @@ void cb_shutdown_load_balance(
         struct s_hashable** hashtable,
         struct s_thread_data* td) {
 
-    DB_TRACE(LOG_DEBUG4, "thread: %u, *hashtable: %p, td->hashtable_ro: %p, "
+    DB_TRACE(LOG_DEBUG5, "thread: %u, *hashtable: %p, td->hashtable_ro: %p, "
             "td->hashtable_ro_old: %p",
             td->thread_id,
             *hashtable,
@@ -987,9 +987,9 @@ void *tee(void *arg0) {
             }
 
             if (dedup_drop_pkt) {
-                DB_CALL(LOG_DEBUG4,
+                DB_CALL(LOG_DEBUG5,
                         char addrbuf0[INET6_ADDRSTRLEN];
-                        DB_TRACE(LOG_DEBUG4, "listener %d: "
+                        DB_TRACE(LOG_DEBUG5, "listener %d: "
                                 "dropping duplicate packet from %s:%u",
                                 td->thread_id,
                                 get_ip(&source_addr, addrbuf0),
@@ -1018,18 +1018,18 @@ void *tee(void *arg0) {
                     break;
             }
 
-            DB_CALL(LOG_DEBUG0,
+            DB_CALL(LOG_DEBUG9,
                     char addrbuf0[INET6_ADDRSTRLEN];
                     char addrbuf1[INET6_ADDRSTRLEN];
-                    DB_TRACE(LOG_DEBUG0, "listener %d: "
+                    DB_TRACE(LOG_DEBUG9, "listener %d: "
                             "got packet from %s:%d",
                             td->thread_id,
                             get_ip(&source_addr, addrbuf0),
                             get_port(&source_addr));
-                    DB_TRACE(LOG_DEBUG0, "listener %d: "
+                    DB_TRACE(LOG_DEBUG9, "listener %d: "
                             "packet is %d bytes long",
                             td->thread_id, numbytes);
-                    DB_TRACE(LOG_DEBUG0, "listener %d: "
+                    DB_TRACE(LOG_DEBUG9, "listener %d: "
                             "sending packet: %s:%u => %s:%u: len: %u",
                             td->thread_id,
                             get_ip4_uint(iph->saddr, addrbuf0),
@@ -1355,7 +1355,7 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
         return;
 
     if (tot_cnt < threshold) {
-        DB_TRACE(LOG_DEBUG6, "not load balancing: tot_cnt < threshold: "
+        DB_TRACE(LOG_DEBUG3, "not load balancing: tot_cnt < threshold: "
                 "%lu < %lu", tot_cnt, threshold);
         return;
     }
@@ -1363,14 +1363,14 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
     for (cnt = 0; cnt < num_threads; cnt++)
         invalidated_targets[cnt] = 0;
 
-    DB_TRACE(LOG_DEBUG6, "len(master_hashtable) before thread merging: %u",
+    DB_TRACE(LOG_DEBUG3, "len(master_hashtable) before thread merging: %u",
             HASH_COUNT(*master_hashtable));
 
     // merge hashmaps
     for (cnt = 0; cnt < num_threads; cnt++) {
-        DB_TRACE(LOG_DEBUG7, "merging thread hash maps into master. "
+        DB_TRACE(LOG_DEBUG2, "merging thread hash maps into master. "
                 "thread: %u", cnt);
-        DB_TRACE(LOG_DEBUG7, "len(thread_hashtable[%u]) before thread "
+        DB_TRACE(LOG_DEBUG2, "len(thread_hashtable[%u]) before thread "
                 "merging: %u", cnt, HASH_COUNT(tds[cnt].hashtable));
         DB_CALL(LOG_ERROR,
                 if (tds[cnt].hashtable == *master_hashtable) {
@@ -1378,7 +1378,7 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
                             "thread's %u table", cnt);
                 }
                 );
-        DB_TRACE(LOG_DEBUG6, "tds[%u].hashtable: %p - master: %p",
+        DB_TRACE(LOG_DEBUG3, "tds[%u].hashtable: %p - master: %p",
                 cnt, tds[cnt].hashtable, *master_hashtable);
         smp_mb__before_atomic();
         for(s=tds[cnt].hashtable; s != NULL; s=s->hh.next) {
@@ -1389,11 +1389,11 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
                         atomic_read(&(s->itemcnt)), 1, 1);
             }
         }
-        DB_TRACE(LOG_DEBUG6, "master_hashtable after thread merging: %p",
+        DB_TRACE(LOG_DEBUG3, "master_hashtable after thread merging: %p",
                 *master_hashtable);
     }
 
-    DB_TRACE(LOG_DEBUG7, "len(master_hashtable) after thread merging: %u",
+    DB_TRACE(LOG_DEBUG2, "len(master_hashtable) after thread merging: %u",
             HASH_COUNT(*master_hashtable));
 
     for(s=*master_hashtable; s != NULL; s=s->hh.next) {
@@ -1438,7 +1438,7 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
                         buf_cnt = snprintf(buf, DEBUG_OUTPUT_BUFLEN - buf_cnt,
                                 "\n\t");
                 }
-                DB_CALL(LOG_DEBUG6,
+                DB_CALL(LOG_DEBUG3,
                         if (DEBUG_OUTPUT_BUFLEN - buf_cnt > 0) {
                             buf_cnt = snprintf(buf,
                                     DEBUG_OUTPUT_BUFLEN - buf_cnt,
@@ -1524,10 +1524,10 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
 
         DB_TRACE(LOG_INFO, "optimization iteration: %u of max %u",
                 itcnt+1, MAXOPTIMIZATIONITERATIONS);
-        DB_CALL(LOG_DEBUG8,
+        DB_CALL(LOG_DEBUG1,
                 char addrbuf0[INET6_ADDRSTRLEN];
                 char addrbuf1[INET6_ADDRSTRLEN];
-                DB_TRACE(LOG_DEBUG8, "load_balance: out_min: %s:%u (%lu), "
+                DB_TRACE(LOG_DEBUG1, "load_balance: out_min: %s:%u (%lu), "
                         "out_max: %s:%u (%lu)\n",
                         get_ip((struct sockaddr_storage *)
                             &(tds[0].targets[target_min_idx].dest), addrbuf0),
@@ -1734,9 +1734,9 @@ uint8_t deduplicate_packet(
     tnow = atomic_read(&now);
     smp_mb__after_atomic();
 
-    DB_CALL(LOG_DEBUG0,
+    DB_CALL(LOG_DEBUG9,
             char addrbuf0[INET6_ADDRSTRLEN];
-            DB_TRACE(LOG_DEBUG0, "now: %lu, source: %s:%u@%u, "
+            DB_TRACE(LOG_DEBUG9, "now: %lu, source: %s:%u@%u, "
                     "key: (%u, %u, %u)",
                     tnow,
                     get_ip(source_addr, addrbuf0),
@@ -1756,7 +1756,7 @@ uint8_t deduplicate_packet(
      */
     ht_e = dedup_ht_get_add(deduplication_hashtable, &key, now);
 
-    DB_TRACE(LOG_DEBUG0, "len(deduplication_hashtable): %u, now: %lu",
+    DB_TRACE(LOG_DEBUG9, "len(deduplication_hashtable): %u, now: %lu",
             HASH_COUNT(*deduplication_hashtable), tnow);
 
     /* check whether packet identifiers exist in 'hashmap'
@@ -1777,7 +1777,7 @@ uint8_t deduplicate_packet(
             );
 
     smp_mb__before_atomic();
-    DB_TRACE(LOG_DEBUG0, "packet identifier(seqnum): %lu, idx: %u, "
+    DB_TRACE(LOG_DEBUG9, "packet identifier(seqnum): %lu, idx: %u, "
             "last_seen: %lu, existing value(seqnum): %lu\n",
             pkt_id,
             pkt_idx,
@@ -1795,17 +1795,17 @@ uint8_t deduplicate_packet(
     }
     if (! atomic_read(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen))) {
         drop_pkt = 0;
-        DB_TRACE(LOG_DEBUG2, "found new packet. adding it");
+        DB_TRACE(LOG_DEBUG7, "found new packet. adding it");
     }
     else if ((atomic_read(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen)) + timeout) < tnow) {
         drop_pkt = 0;
-        DB_TRACE(LOG_DEBUG2, "found stale packet. overwriting it");
+        DB_TRACE(LOG_DEBUG7, "found stale packet. overwriting it");
     }
     else {
         drop_pkt = 1;
-        DB_CALL(LOG_DEBUG5,
+        DB_CALL(LOG_DEBUG4,
                 char addrbuf0[INET6_ADDRSTRLEN];
-                DB_TRACE(LOG_DEBUG5, "found duplicate. dropping packet. "
+                DB_TRACE(LOG_DEBUG4, "found duplicate. dropping packet. "
                         "now: %lu, last_seen: %lu, source: %s:%u@%u, "
                         "key: (%u, %u, %u)",
                         tnow,
@@ -1857,7 +1857,7 @@ void deduplicate_maintenance(
     }
     last_run = tnow;
 
-    DB_TRACE(LOG_DEBUG7, "time for maintenance");
+    DB_TRACE(LOG_DEBUG2, "time for maintenance");
 
     // loop over hashmap, reset counters if necessary
     if (pthread_rwlock_wrlock(deduplication_lock) != 0) {
@@ -1865,7 +1865,7 @@ void deduplicate_maintenance(
         return;
     }
 
-    DB_TRACE(LOG_DEBUG2, "have lock");
+    DB_TRACE(LOG_DEBUG7, "have lock");
 
     for(ht_e=*deduplication_hashtable; ht_e != NULL; ht_e=ht_e->hh.next) {
         src_cnt++;
@@ -1873,7 +1873,7 @@ void deduplicate_maintenance(
         if (tnow - ht_e->update_counter_timestamp_start >= deduplication_frequency_reset_interval) {
             reset_cnt++;
 
-            DB_TRACE(LOG_DEBUG6, "key: %u, %u, %u resetting frequency "
+            DB_TRACE(LOG_DEBUG3, "key: %u, %u, %u resetting frequency "
                     "counters (elapsed: %lus)",
                     ht_e->key.addr,
                     ht_e->key.port,
@@ -1888,7 +1888,7 @@ void deduplicate_maintenance(
             dedup_ht_size = (uint32_t)(
                     ht_e->update_frequency * 2.0 * timeout * resize_factor);
 
-            DB_TRACE(LOG_DEBUG6, "increasing inner ht from %u to %u due to "
+            DB_TRACE(LOG_DEBUG3, "increasing inner ht from %u to %u due to "
                     "update frequency %fHz and packet timeout: %us",
                     ht_e->dedup_ht_size,
                     dedup_ht_size,
@@ -1902,11 +1902,11 @@ void deduplicate_maintenance(
             ht_e->dedup_ht_size = dedup_ht_size;
         }
     }
-    DB_TRACE(LOG_DEBUG7, "resetted update frequency for %lu sources "
+    DB_TRACE(LOG_DEBUG2, "resetted update frequency for %lu sources "
             "(%lu tracked sources)",
             reset_cnt, src_cnt);
 
     pthread_rwlock_unlock(deduplication_lock);
 
-    DB_TRACE(LOG_DEBUG7, "maintenance done");
+    DB_TRACE(LOG_DEBUG2, "maintenance done");
 }
