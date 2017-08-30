@@ -129,6 +129,13 @@ void default_settings_duplicate(t_settings_duplicate* settings) {
 }
 
 void default_settings(t_settings* settings) {
+    // set default log level to INFO
+    db_setdebug(LOG_INFO);
+    // initialize master_hashtable_idx
+    atomic_set(&master_hashtable_idx, 0);
+    // initialize 'time'
+    atomic_set(&now, 0);
+
     memset(settings, 0, sizeof(t_settings));
 
     // 64 MB SND/RCV socket buffers
@@ -139,125 +146,118 @@ void default_settings(t_settings* settings) {
     default_settings_duplicate(&(settings->duplicate));
 }
 
-int main(int argc, char *argv[]) {
-    t_settings settings;
-    default_settings(&settings);
-
-    pthread_t thread[MAXTHREADS];
-    // listening socket. shared by all threads
-    int lsock;
-
-    struct s_hashable* master_hashtable = NULL;
-    struct s_deduplication_hashable* deduplication_hashtable = NULL;
-
-    void *thread_result;
-    uint8_t cnt;
-    int c;
-
-    atomic_set(&master_hashtable_idx, 0);
-    smp_mb__after_atomic();
-
+void parse_argv(int argc, char *argv[], t_settings* settings) {
     static char const optstr[] = "bd:DHl:Lm:n:p:P:i:I:r:R:t:T:v";
-
-    db_setdebug(LOG_ALL);
+    int c;
 
     opterr = 0;
     while ((c = getopt (argc, argv, optstr)) != -1)
-    switch (c) {
-        case 'd':
-            db_setdebug(atoi(optarg));
+        switch (c) {
+            case 'd':
+                db_setdebug(atoi(optarg));
+                break;
+            case 'l':
+                split_addr(optarg, settings->listenaddr,
+                        &(settings->listenport));
+                DB_TRACE(LOG_INFO, "listen address: %s:%u",
+                        settings->listenaddr, settings->listenport);
             break;
-        case 'l':
-            split_addr(optarg, settings.listenaddr, &(settings.listenport));
-            DB_TRACE(LOG_INFO, "listen address: %s:%u",
-                    settings.listenaddr, settings.listenport);
-        break;
-        case 'H':
-            settings.distribute.hash_based_dist_enabled = 1;
-            DB_TRACE(LOG_INFO, "use hash-based while distributing");
-        break;
-        case 'L':
-            settings.distribute.loadbalanced_dist_enabled = 1;
-            DB_TRACE(LOG_INFO, "use load-balancing while distributing");
-        break;
-        case 'D':
-            settings.deduplicate.enabled = 1;
-            DB_TRACE(LOG_INFO, "deduplicate incoming stream");
-        break;
-        case 'I':
-            settings.deduplicate.threshold = strtoul(optarg, NULL, 10);
-            DB_TRACE(LOG_INFO, "deduplicate maintenance every %u seconds",
-                    settings.deduplicate.threshold);
-        break;
-        case 'r':
-            settings.deduplicate.frequency_reset_interval = strtoul(
-                    optarg, NULL, 10);
-            DB_TRACE(LOG_INFO,
-                    "deduplicate update frequency interval %u seconds",
-                    settings.deduplicate.frequency_reset_interval);
-        break;
-        case 'T':
-            settings.deduplicate.timeout = strtoul(optarg, NULL, 10);
-            DB_TRACE(LOG_INFO, "deduplicate timeout: %u seconds",
-                    settings.deduplicate.timeout);
-        break;
-        case 'p':
-            settings.deduplicate.pkt_src_id_idx = strtoul(optarg, NULL, 10);
-            DB_TRACE(LOG_INFO, "deduplicate packet source id index: %u",
-                    settings.deduplicate.pkt_src_id_idx);
-        break;
-        case 'P':
-            settings.deduplicate.pkt_id_idx = strtoul(optarg, NULL, 10);
-            DB_TRACE(LOG_INFO, "deduplicate packet id index: %u",
-                    settings.deduplicate.pkt_id_idx);
-        break;
-        case 'R':
-            settings.deduplicate.inner_ht_resize_factor = strtoul(
-                    optarg, NULL, 10);
-            DB_TRACE(LOG_INFO,
-                    "deduplicate inner hash table resize factor: %f",
-                    settings.deduplicate.inner_ht_resize_factor);
-        break;
-        case 'b':
-            settings.distribute.bytecnt_based = 1;
-        break;
-        case 'n':
-            settings.num_threads = atoi(optarg);
-            DB_TRACE(LOG_INFO, "number of threads: %u",
-                    settings.num_threads);
-        break;
-        case 'm':
-            settings.mode = *optarg;
-            switch (settings.mode) {
-                case UTEE_MODE_DISTRIBUTE:
-                    DB_TRACE(LOG_INFO, "mode: distribution");
-                break;
-                case UTEE_MODE_DUPLICATE:
-                    DB_TRACE(LOG_INFO, "mode: tee (duplicate)");
-                break;
-                default:
-                    DB_TRACE(LOG_INFO, "invalid mode 0x%X", settings.mode);
-                    settings.mode = UTEE_MODE_INVALID;
-                    usage(argc, argv);
-                break;
-            }
-        break;
-        case 'i':
-            settings.distribute.threshold = strtoul(optarg, NULL, 10);
-            DB_TRACE(LOG_INFO, "load balance every: %lu packets",
-                    settings.distribute.threshold);
-        break;
-        case 't':
-            settings.distribute.reorder_threshold = atof(optarg);
-            DB_TRACE(LOG_INFO, "load balance inter-target threshold: %.2f",
-                    settings.distribute.reorder_threshold);
-        break;
-        default:
-            usage(argc, argv);
-    }
+            case 'H':
+                settings->distribute.hash_based_dist_enabled = 1;
+                DB_TRACE(LOG_INFO, "use hash-based while distributing");
+            break;
+            case 'L':
+                settings->distribute.loadbalanced_dist_enabled = 1;
+                DB_TRACE(LOG_INFO, "use load-balancing while distributing");
+            break;
+            case 'D':
+                settings->deduplicate.enabled = 1;
+                DB_TRACE(LOG_INFO, "deduplicate incoming stream");
+            break;
+            case 'I':
+                settings->deduplicate.threshold = strtoul(optarg, NULL, 10);
+                DB_TRACE(LOG_INFO, "deduplicate maintenance every %u seconds",
+                        settings->deduplicate.threshold);
+            break;
+            case 'r':
+                settings->deduplicate.frequency_reset_interval = strtoul(
+                        optarg, NULL, 10);
+                DB_TRACE(LOG_INFO,
+                        "deduplicate update frequency interval %u seconds",
+                        settings->deduplicate.frequency_reset_interval);
+            break;
+            case 'T':
+                settings->deduplicate.timeout = strtoul(optarg, NULL, 10);
+                DB_TRACE(LOG_INFO, "deduplicate timeout: %u seconds",
+                        settings->deduplicate.timeout);
+            break;
+            case 'p':
+                settings->deduplicate.pkt_src_id_idx = strtoul(
+                        optarg, NULL, 10);
+                DB_TRACE(LOG_INFO, "deduplicate packet source id index: %u",
+                        settings->deduplicate.pkt_src_id_idx);
+            break;
+            case 'P':
+                settings->deduplicate.pkt_id_idx = strtoul(optarg, NULL, 10);
+                DB_TRACE(LOG_INFO, "deduplicate packet id index: %u",
+                        settings->deduplicate.pkt_id_idx);
+            break;
+            case 'R':
+                settings->deduplicate.inner_ht_resize_factor = strtoul(
+                        optarg, NULL, 10);
+                DB_TRACE(LOG_INFO,
+                        "deduplicate inner hash table resize factor: %f",
+                        settings->deduplicate.inner_ht_resize_factor);
+            break;
+            case 'b':
+                settings->distribute.bytecnt_based = 1;
+            break;
+            case 'n':
+                settings->num_threads = atoi(optarg);
+                DB_TRACE(LOG_INFO, "number of threads: %u",
+                        settings->num_threads);
+            break;
+            case 'm':
+                settings->mode = *optarg;
+                switch (settings->mode) {
+                    case UTEE_MODE_DISTRIBUTE:
+                        DB_TRACE(LOG_INFO, "mode: distribution");
+                    break;
+                    case UTEE_MODE_DUPLICATE:
+                        DB_TRACE(LOG_INFO, "mode: tee (duplicate)");
+                    break;
+                    default:
+                        DB_TRACE(LOG_INFO, "invalid mode 0x%X",
+                                settings->mode);
+                        settings->mode = UTEE_MODE_INVALID;
+                        usage(argc, argv);
+                    break;
+                }
+            break;
+            case 'i':
+                settings->distribute.threshold = strtoul(optarg, NULL, 10);
+                DB_TRACE(LOG_INFO, "load balance every: %lu packets",
+                        settings->distribute.threshold);
+            break;
+            case 't':
+                settings->distribute.reorder_threshold = atof(optarg);
+                DB_TRACE(LOG_INFO, "load balance inter-target threshold: %.2f",
+                        settings->distribute.reorder_threshold);
+            break;
+            default:
+                usage(argc, argv);
+        }
+
+    settings->num_targets = argc - optind;
+    if (settings->mode == UTEE_MODE_INVALID ||
+            settings->num_threads == 0 ||
+            settings->listenport == 0 ||
+            settings->num_threads > MAXTHREADS ||
+            settings->num_targets == 0)
+        usage(argc, argv);
 
     DB_CALL(LOG_INFO,
-            if (settings.distribute.bytecnt_based) {
+            if (settings->distribute.bytecnt_based) {
                 DB_TRACE(LOG_INFO,
                         "use load-balancing based on byte counters");
             }
@@ -268,86 +268,123 @@ int main(int argc, char *argv[]) {
         );
 
     DB_TRACE(LOG_ALL, "using debug level: %d", db_getdebug());
+}
 
-    settings.num_targets = argc - optind;
-    if (settings.mode == UTEE_MODE_INVALID ||
-            settings.num_threads == 0 ||
-            settings.listenport == 0 ||
-            settings.num_threads > MAXTHREADS ||
-            settings.num_targets == 0)
-        usage(argc, argv);
-
+void setup_signals(void) {
     signal(SIGUSR1, sig_handler_toggle_optional_output);
     signal(SIGTERM, sig_handler_shutdown);
     signal(SIGHUP, sig_handler_shutdown);
     signal(SIGINT, sig_handler_shutdown);
     signal(SIGUSR2, sig_handler_ignore);
+}
 
+int setup_sockets(t_settings* settings) {
     DB_TRACE(LOG_INFO, "setting up listener socket...");
-    lsock = open_listener_socket(settings.listenaddr, settings.listenport,
-            settings.pipe_size);
+    // listening socket. shared by all threads
+    return open_listener_socket(settings->listenaddr, settings->listenport,
+            settings->pipe_size);
+}
+
+void setup_thread_data(t_settings* settings, int listen_socket,
+        struct s_deduplication_hashable** deduplication_hashtable) {
+    uint8_t cnt;
 
     bzero(tds, sizeof(tds));
     // this one loops over all threads
-    for (cnt = 0; cnt < settings.num_threads; cnt++) {
+    for (cnt = 0; cnt < settings->num_threads; cnt++) {
         tds[cnt].thread_id = cnt;
-        tds[cnt].sockfd = lsock;
-        tds[cnt].targets = settings.targets;
-        tds[cnt].num_targets = settings.num_targets;
+        tds[cnt].sockfd = listen_socket;
+        tds[cnt].targets = settings->targets;
+        tds[cnt].num_targets = settings->num_targets;
         tds[cnt].hashtable = NULL;
         tds[cnt].hashtable_ro = NULL;
         tds[cnt].hashtable_ro_old = NULL;
         atomic_set(&(tds[cnt].last_used_master_hashtable_idx), 0);
 
-        tds[cnt].deduplication_hashtable = &deduplication_hashtable;
+        tds[cnt].deduplication_hashtable = deduplication_hashtable;
 
-        switch (settings.mode) {
+        switch (settings->mode) {
             case UTEE_MODE_DISTRIBUTE:
                 tds[cnt].features.distribute = 1;
                 tds[cnt].features.load_balanced_dist = \
-                        settings.distribute.loadbalanced_dist_enabled;
+                        settings->distribute.loadbalanced_dist_enabled;
                 tds[cnt].features.hash_based_dist = \
-                        settings.distribute.hash_based_dist_enabled;
+                        settings->distribute.hash_based_dist_enabled;
                 tds[cnt].features.lb_bytecnt_based = \
-                        settings.distribute.bytecnt_based;
+                        settings->distribute.bytecnt_based;
             break;
             case UTEE_MODE_DUPLICATE:
                 tds[cnt].features.duplicate = 1;
                 optional_output_enabled = 1;
             break;
         }
-        tds[cnt].features.deduplicate = settings.deduplicate.enabled;
+        tds[cnt].features.deduplicate = settings->deduplicate.enabled;
         tds[cnt].feature_settings.deduplication_timeout = \
-                settings.deduplicate.timeout;
+                settings->deduplicate.timeout;
 
         tds[cnt].deduplication_pkt_src_id_idx = \
-                settings.deduplicate.pkt_src_id_idx;
+                settings->deduplicate.pkt_src_id_idx;
         tds[cnt].deduplication_pkt_id_idx = \
-                settings.deduplicate.pkt_id_idx;
+                settings->deduplicate.pkt_id_idx;
     }
-    smp_mb__after_atomic();
+}
 
-    // initialize 'time'
-    atomic_set(&now, 0);
+void threads_create(t_settings* settings, pthread_rwlock_t* deduplication_lock,
+        pthread_t* threads) {
+    uint8_t cnt;
 
-    // set all targets
-    init_sending_sockets(settings.targets, argc - optind, &(argv[optind]),
-            settings.pipe_size);
-
-    if (settings.deduplicate.enabled) {
-        if (pthread_rwlock_init(&deduplication_lock, NULL) != 0) {
+    if (settings->deduplicate.enabled) {
+        if (pthread_rwlock_init(deduplication_lock, NULL) != 0) {
             DB_TRACE(LOG_CRITICAL, "lock init failed");
             exit(-1);
         }
     }
 
     // this one loops over all threads and starts them
-    for (cnt = 0; cnt < settings.num_threads; cnt++) {
-        pthread_create(&thread[cnt], NULL, &tee, (void *) &tds[cnt]);
+    for (cnt = 0; cnt < settings->num_threads; cnt++) {
+        pthread_create(&threads[cnt], NULL, &tee, (void *) &tds[cnt]);
+    }
+}
+
+void utee_shutdown(
+        t_settings* settings,
+        pthread_t* threads,
+        struct s_hashable** master_hashtable,
+        struct s_deduplication_hashable** deduplication_hashtable) {
+    uint8_t cnt;
+    void*   thread_result;
+
+    for (cnt = 0; cnt < settings->num_threads; cnt++) {
+        pthread_join(threads[cnt], &thread_result);
+        if (thread_result)
+            free(thread_result);
     }
 
-    DB_TRACE(LOG_INFO, "starting utee...");
+    ht_delete_all(master_hashtable);
+    dedup_ht_delete_all(deduplication_hashtable);
+}
 
+int main(int argc, char *argv[]) {
+    t_settings settings;
+    pthread_t  threads[MAXTHREADS];
+    struct s_hashable* master_hashtable = NULL;
+    struct s_deduplication_hashable* deduplication_hashtable = NULL;
+
+    default_settings(&settings);
+    parse_argv(argc, argv, &settings);
+    setup_signals();
+    setup_thread_data(&settings, setup_sockets(&settings),
+            &deduplication_hashtable);
+    smp_mb__after_atomic();
+
+    // set all targets
+    init_sending_sockets(settings.targets, argc - optind, &(argv[optind]),
+            settings.pipe_size);
+
+    // create and start worker threads
+    threads_create(&settings, &deduplication_lock, threads);
+
+    DB_TRACE(LOG_INFO, "starting utee...");
     // main thread to catch/handle signals, trigger load-balancing, if enabled
     while (run_flag) {
 
@@ -372,15 +409,9 @@ int main(int argc, char *argv[]) {
 
         sleep(1);
     }
+
     DB_TRACE(LOG_INFO, "shutting down");
-
-    for (cnt = 0; cnt < settings.num_threads; cnt++) {
-        pthread_join(thread[cnt], &thread_result);
-        if (thread_result)
-            free(thread_result);
-    }
-
-    ht_delete_all(&master_hashtable);
-    dedup_ht_delete_all(&deduplication_hashtable);
+    utee_shutdown(&settings, threads, &master_hashtable,
+            &deduplication_hashtable);
     return 0;
 }
