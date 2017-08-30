@@ -25,6 +25,10 @@
 
 #include <stdint.h>
 
+#if defined(__STRICT_ANSI__) || !defined(__GNUC__)
+#define asm __asm__
+#endif
+
 #define barrier() __asm__ __volatile__("": : :"memory")
 
 #define smp_mb__before_atomic() barrier()
