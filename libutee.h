@@ -110,13 +110,13 @@ do {                                                                          \
     ema = ((double)alpha * new_value) + (1.0 - alpha) * (double)old_value;    \
 } while(0)
 
-struct s_target {
+typedef struct {
     struct sockaddr_storage dest;
     socklen_t dest_len;
     int fd;
     // per output / target stats
     atomic_t itemcnt;
-};
+} t_target;
 
 struct s_features {
     uint8_t distribute;
@@ -131,7 +131,7 @@ struct s_hashable {
     // TODO: this is not IPv6 safe
     uint64_t key;
     struct sockaddr_storage source;
-    struct s_target* target;
+    t_target* target;
     // per hitter / source stats
     atomic_t itemcnt;
     UT_hash_handle hh;
@@ -176,7 +176,7 @@ typedef struct {
 struct s_thread_data {
     int thread_id;
     int sockfd;
-    struct s_target* targets;
+    t_target* targets;
     uint32_t num_targets;
     struct s_features features;
     t_feature_settings feature_settings;
@@ -225,12 +225,12 @@ uint16_t get_port4_uint(uint16_t port);
 
 void cp_sockaddr(struct sockaddr_storage* src, struct sockaddr_storage* dst);
 
-struct s_target* hash_based_output(uint64_t key, struct s_thread_data* td);
+t_target* hash_based_output(uint64_t key, struct s_thread_data* td);
 
 struct s_hashable* ht_get(struct s_hashable **ht, uint64_t key);
 
 struct s_hashable* ht_get_add(struct s_hashable **ht, uint64_t key,
-        struct sockaddr_storage* source, struct s_target* target,
+        struct sockaddr_storage* source, t_target* target,
         uint64_t itemcnt, uint8_t overwrite, uint8_t sum_itemcnt);
 
 void ht_iter(struct s_hashable *ht, void (callback)(struct s_hashable*));
@@ -240,11 +240,11 @@ void hte_print(struct s_hashable *ht_e);
 void ht_print(struct s_hashable *ht);
 
 void ht_find_best(struct s_hashable *ht,
-        struct s_target *target,
+        t_target *target,
         uint64_t excess_items,
         struct s_hashable **ht_e_best);
 
-uint32_t ht_target_count(struct s_hashable *ht, struct s_target *target);
+uint32_t ht_target_count(struct s_hashable *ht, t_target *target);
 
 void ht_copy(struct s_hashable *ht_from, struct s_hashable **ht_to);
 
@@ -287,7 +287,7 @@ int split_addr(const char* addr, char* ip, uint16_t* port);
 
 int prepare_sending_socket(struct sockaddr *addr, socklen_t len, uint32_t pipe_size);
 
-void init_sending_sockets(struct s_target* targets,
+void init_sending_sockets(t_target* targets,
         uint32_t num_targets,
         char *raw_targets[],
         uint32_t pipe_size);

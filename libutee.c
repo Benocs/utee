@@ -173,7 +173,7 @@ void cp_sockaddr(struct sockaddr_storage* src, struct sockaddr_storage* dst) {
     }
 }
 
-struct s_target* hash_based_output(uint64_t key, struct s_thread_data* td) {
+t_target* hash_based_output(uint64_t key, struct s_thread_data* td) {
 
     uint32_t hashvalue = 0;
     uint32_t target = 0;
@@ -189,7 +189,7 @@ struct s_target* hash_based_output(uint64_t key, struct s_thread_data* td) {
 
     DB_TRACE(LOG_DEBUG9, "hash_based_output: key: %lx\ttarget: %u",
             key, target);
-    return (struct s_target*)&(td->targets[target]);
+    return (t_target*)&(td->targets[target]);
 }
 
 struct s_hashable* ht_get(struct s_hashable **ht, uint64_t key) {
@@ -201,7 +201,7 @@ struct s_hashable* ht_get(struct s_hashable **ht, uint64_t key) {
 }
 
 struct s_hashable* ht_get_add(struct s_hashable **ht, uint64_t key,
-        struct sockaddr_storage* source, struct s_target* target,
+        struct sockaddr_storage* source, t_target* target,
         uint64_t itemcnt, uint8_t overwrite, uint8_t sum_itemcnt) {
     struct s_hashable *ht_e = NULL;
     uint8_t added = 0;
@@ -307,7 +307,7 @@ void ht_print(struct s_hashable *ht) {
 }
 
 void ht_find_best(struct s_hashable *ht,
-        struct s_target *target,
+        t_target *target,
         uint64_t excess_items,
         struct s_hashable **ht_e_best) {
 
@@ -371,7 +371,7 @@ void ht_find_best(struct s_hashable *ht,
     }
 }
 
-uint32_t ht_target_count(struct s_hashable *ht, struct s_target *target) {
+uint32_t ht_target_count(struct s_hashable *ht, t_target *target) {
 
     uint32_t count = 0;
     struct s_hashable *s;
@@ -728,7 +728,7 @@ uint8_t cb_deduplicate_duplicate(void) {
     return drop_pkt;
 }
 
-struct s_target*  cb_pkt_process_load_balance(
+t_target*  cb_pkt_process_load_balance(
         struct s_thread_data *td,
         struct sockaddr_storage* source_addr,
         int numbytes,
@@ -740,7 +740,7 @@ struct s_target*  cb_pkt_process_load_balance(
     struct s_hashable** hashtable = &(td->hashtable);
 
     struct s_features *features = &(td->features);
-    struct s_target *target;
+    t_target *target;
 
 #if defined ENABLE_IPV6
 #else
@@ -748,7 +748,7 @@ struct s_target*  cb_pkt_process_load_balance(
 #endif
 
     if (features->hash_based_dist || features->load_balanced_dist) {
-        target = (struct s_target*)hash_based_output(
+        target = (t_target*)hash_based_output(
                 CREATE_HT_KEY(source_addr), td);
         target_addr = (struct sockaddr_in*)&(target->dest);
     }
@@ -813,7 +813,7 @@ void cb_post_pkt_send_load_balance(
         struct s_features *features,
         int32_t bytes_written,
         struct s_hashable* ht_e,
-        struct s_target* target) {
+        t_target* target) {
 
     if (features->load_balanced_dist) {
         // NOTE: need atomic_inc for target-cnt as
@@ -897,7 +897,7 @@ void *tee(void *arg0) {
     setup_udp_header(udph, 0, 0, 0);
     char *data = (char *)udph + sizeof(struct udphdr);
 
-    struct s_target *target = &(td->targets[td->thread_id]);
+    t_target *target = &(td->targets[td->thread_id]);
 #if defined ENABLE_IPV6
 #else
     struct sockaddr_in *target_addr = (struct sockaddr_in *)&(target->dest);
@@ -1211,12 +1211,12 @@ int prepare_sending_socket(
     return(s);
 }
 
-void init_sending_sockets(struct s_target* targets,
+void init_sending_sockets(t_target* targets,
         uint32_t num_targets,
         char *raw_targets[],
         uint32_t pipe_size) {
 
-    struct s_target *target = NULL;
+    t_target *target = NULL;
     struct sockaddr *sa;
     uint16_t recv_idx;
     int err;
@@ -1336,7 +1336,7 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
     uint8_t found_first_valid_target = 0;
 
     // NOTE: from s_hashable, the hitter-stats can be extracted
-    // NOTE: from s_target the output stats can be extracted
+    // NOTE: from t_target the output stats can be extracted
 
     if (num_threads == 0)
         return;
