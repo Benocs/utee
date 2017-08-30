@@ -50,20 +50,14 @@
  * * implement full IPv6 support
  */
 
-#if defined(DEBUG)
-#undef uthash_noexpand_fyi
-#define uthash_noexpand_fyi(tbl) DB_TRACE(LOG_DEBUG,                          \
-        "bucket expansion inhibited")
-#undef uthash_expand_fyi
-#define uthash_expand_fyi(tbl) DB_TRACE(LOG_DEBUG, "expanding to %d buckets", \
-        tbl->num_buckets)
-#endif
-
 void usage(int argc, char *argv[]) {
     fprintf(stderr,
             "usage: %s\n"
             "\t-l <listenaddr:port>\n"
-            "\t-m <r|d>\n"
+            "\t-m <d|t>\n"
+            "\t\td: distribute traffic over targets\n"
+            "\t\tt: tee (duplicate) incoming traffic and send it to "
+                "all targets\n"
             "\t-n <num_threads>\n"
             "\t<targetaddr:port> [targetaddr:port [...]]\n"
             "\n\tNote: num_threads must be >= number of target "
@@ -71,8 +65,8 @@ void usage(int argc, char *argv[]) {
             "\n\toptional feature switches for all modes\n"
             "\t[-D]\tdeduplicate packets\n"
             "\n\toptional feature switches for mode 'distribute'\n"
-            "\t[-H]\thash based target selection\n"
-            "\t[-L]\thash based load balancing of targets\n"
+            "\t[-H]\thash-based target selection\n"
+            "\t[-L]\thash-based load balancing of targets\n"
             "\n\toptional load balance configuration\n"
             "\t[-i <load balance interval>]\n"
             "\t[-t <load balance inter-target threshold>]\n"
@@ -87,6 +81,23 @@ void usage(int argc, char *argv[]) {
             "\n\t"
             "\n\toptional logging configuration\n"
             "\t[-d <log level>]\n"
+            "\t\thigher values result in more verbose logging\n"
+            "\t\tdefined log levels:\n"
+            "\t\tCRITICAL 10\n"
+            "\t\tERROR    20\n"
+            "\t\tWARNING  30\n"
+            "\t\tINFO     40\n"
+            "\t\tDEBUG    50\n"
+            "\t\tDEBUG1   51\n"
+            "\t\tDEBUG2   52\n"
+            "\t\tDEBUG3   53\n"
+            "\t\tDEBUG4   54\n"
+            "\t\tDEBUG5   55\n"
+            "\t\tDEBUG6   56\n"
+            "\t\tDEBUG7   57\n"
+            "\t\tDEBUG8   58\n"
+            "\t\tDEBUG9   59\n"
+            "\t\tALL     255\n"
             "\n"
             "repository revision: %s\n"
             "compile time:        %s\n"
@@ -95,48 +106,52 @@ void usage(int argc, char *argv[]) {
     exit(1);
 }
 
+void default_settings_deduplicate(t_settings_deduplicate* settings) {
+    settings->enabled = 0;
+    settings->timeout = 10;
+    settings->threshold = 1;
+    settings->frequency_reset_interval = 5;
+    settings->pkt_src_id_idx = 3;
+    settings->pkt_id_idx = 2;
+    settings->inner_ht_resize_factor = 4;
+}
+
+void default_settings_distribute(t_settings_distribute* settings) {
+    settings->bytecnt_based = 0;
+    // default: load balance every 50e6 lines
+    settings->threshold = 50e6;
+    // default: min difference between targets for load-balancing to kick in:
+    // 10%
+    settings->reorder_threshold = 0.1;
+}
+
+void default_settings_duplicate(t_settings_duplicate* settings) {
+}
+
+void default_settings(t_settings* settings) {
+    memset(settings, 0, sizeof(t_settings));
+
+    // 64 MB SND/RCV socket buffers
+    settings->pipe_size = 67108864;
+
+    default_settings_deduplicate(&(settings->deduplicate));
+    default_settings_distribute(&(settings->distribute));
+    default_settings_duplicate(&(settings->duplicate));
+}
+
 int main(int argc, char *argv[]) {
+    t_settings settings;
+    default_settings(&settings);
 
-    struct s_target targets[MAXTHREADS];
-
-    char listenaddr[INET6_ADDRSTRLEN];
-    uint16_t listenport = 0;
     pthread_t thread[MAXTHREADS];
-    uint8_t cnt;
+    // listening socket. shared by all threads
     int lsock;
-    void *res;
-
-    unsigned char mode = 0xFF;
-
-    uint8_t loadbalanced_dist_enabled = 0;
-    uint8_t hash_based_dist_enabled = 0;
-
-    uint8_t deduplication_enabled = 0;
-    uint32_t deduplication_timeout = 10;
-    uint32_t deduplication_threshold = 1;
-    uint32_t deduplication_frequency_reset_interval = 5;
-    uint32_t deduplication_pkt_src_id_idx = 3;
-    uint32_t deduplication_pkt_id_idx = 2;
-    double deduplication_inner_ht_resize_factor = 4;
-
-    // load balance based on paket counts if 0
-    // load balance based on byte counts if 1
-    uint8_t loadbalance_bytecnt_based = 0;
 
     struct s_hashable* master_hashtable = NULL;
     struct s_deduplication_hashable* deduplication_hashtable = NULL;
 
-    // default: load balance every 50e6 lines
-    uint64_t threshold = 50e6;
-    // default: min difference between targets for load-balancing to kick in:
-    // 10%
-    double reorder_threshold = 0.1;
-
-    // 64 MB SND/RCV buffers
-    uint32_t pipe_size = 67108864;
-
-    uint32_t num_targets;
-
+    void *thread_result;
+    uint8_t cnt;
     int c;
 
     atomic_set(&master_hashtable_idx, 0);
@@ -153,94 +168,96 @@ int main(int argc, char *argv[]) {
             db_setdebug(atoi(optarg));
             break;
         case 'l':
-            split_addr(optarg, listenaddr, &listenport);
+            split_addr(optarg, settings.listenaddr, &(settings.listenport));
             DB_TRACE(LOG_INFO, "listen address: %s:%u",
-                    listenaddr, listenport);
+                    settings.listenaddr, settings.listenport);
         break;
         case 'H':
-            hash_based_dist_enabled = 1;
+            settings.distribute.hash_based_dist_enabled = 1;
             DB_TRACE(LOG_INFO, "use hash-based while distributing");
         break;
         case 'L':
-            loadbalanced_dist_enabled = 1;
+            settings.distribute.loadbalanced_dist_enabled = 1;
             DB_TRACE(LOG_INFO, "use load-balancing while distributing");
         break;
         case 'D':
-            deduplication_enabled = 1;
+            settings.deduplicate.enabled = 1;
             DB_TRACE(LOG_INFO, "deduplicate incoming stream");
         break;
         case 'I':
-            deduplication_threshold = strtoul(optarg, NULL, 10);
+            settings.deduplicate.threshold = strtoul(optarg, NULL, 10);
             DB_TRACE(LOG_INFO, "deduplicate maintenance every %u seconds",
-                    deduplication_threshold);
+                    settings.deduplicate.threshold);
         break;
         case 'r':
-            deduplication_frequency_reset_interval = strtoul(optarg, NULL, 10);
+            settings.deduplicate.frequency_reset_interval = strtoul(
+                    optarg, NULL, 10);
             DB_TRACE(LOG_INFO,
                     "deduplicate update frequency interval %u seconds",
-                    deduplication_frequency_reset_interval);
+                    settings.deduplicate.frequency_reset_interval);
         break;
         case 'T':
-            deduplication_timeout = strtoul(optarg, NULL, 10);
+            settings.deduplicate.timeout = strtoul(optarg, NULL, 10);
             DB_TRACE(LOG_INFO, "deduplicate timeout: %u seconds",
-                    deduplication_timeout);
+                    settings.deduplicate.timeout);
         break;
         case 'p':
-            deduplication_pkt_src_id_idx = strtoul(optarg, NULL, 10);
+            settings.deduplicate.pkt_src_id_idx = strtoul(optarg, NULL, 10);
             DB_TRACE(LOG_INFO, "deduplicate packet source id index: %u",
-                    deduplication_pkt_src_id_idx);
+                    settings.deduplicate.pkt_src_id_idx);
         break;
         case 'P':
-            deduplication_pkt_id_idx = strtoul(optarg, NULL, 10);
+            settings.deduplicate.pkt_id_idx = strtoul(optarg, NULL, 10);
             DB_TRACE(LOG_INFO, "deduplicate packet id index: %u",
-                    deduplication_pkt_id_idx);
+                    settings.deduplicate.pkt_id_idx);
         break;
         case 'R':
-            deduplication_inner_ht_resize_factor = strtoul(optarg, NULL, 10);
+            settings.deduplicate.inner_ht_resize_factor = strtoul(
+                    optarg, NULL, 10);
             DB_TRACE(LOG_INFO,
                     "deduplicate inner hash table resize factor: %f",
-                    deduplication_inner_ht_resize_factor);
+                    settings.deduplicate.inner_ht_resize_factor);
         break;
         case 'b':
-            loadbalance_bytecnt_based = 1;
+            settings.distribute.bytecnt_based = 1;
         break;
         case 'n':
-            num_threads = atoi(optarg);
+            settings.num_threads = atoi(optarg);
             DB_TRACE(LOG_INFO, "number of threads: %u",
-                    num_threads);
+                    settings.num_threads);
         break;
         case 'm':
-            switch (*optarg) {
-                case 'r':
-                    mode = 'r';
-                    DB_TRACE(LOG_INFO, "mode: round-robin distribution");
+            settings.mode = *optarg;
+            switch (settings.mode) {
+                case UTEE_MODE_DISTRIBUTE:
+                    DB_TRACE(LOG_INFO, "mode: distribution");
                 break;
-                case 'd':
-                    mode = 'd';
-                    DB_TRACE(LOG_INFO, "mode: duplicate");
+                case UTEE_MODE_DUPLICATE:
+                    DB_TRACE(LOG_INFO, "mode: tee (duplicate)");
                 break;
                 default:
-                    mode = 255;
-                    DB_TRACE(LOG_INFO, "invalid mode 0x%x", mode);
+                    DB_TRACE(LOG_INFO, "invalid mode 0x%X", settings.mode);
+                    settings.mode = UTEE_MODE_INVALID;
                     usage(argc, argv);
                 break;
             }
         break;
         case 'i':
-            threshold = strtoul(optarg, NULL, 10);
-            DB_TRACE(LOG_INFO, "load balance every: %lu packets", threshold);
+            settings.distribute.threshold = strtoul(optarg, NULL, 10);
+            DB_TRACE(LOG_INFO, "load balance every: %lu packets",
+                    settings.distribute.threshold);
         break;
         case 't':
-            reorder_threshold = atof(optarg);
+            settings.distribute.reorder_threshold = atof(optarg);
             DB_TRACE(LOG_INFO, "load balance inter-target threshold: %.2f",
-                    reorder_threshold);
+                    settings.distribute.reorder_threshold);
         break;
         default:
             usage(argc, argv);
     }
 
     DB_CALL(LOG_INFO,
-            if (loadbalance_bytecnt_based) {
+            if (settings.distribute.bytecnt_based) {
                 DB_TRACE(LOG_INFO,
                         "use load-balancing based on byte counters");
             }
@@ -252,9 +269,12 @@ int main(int argc, char *argv[]) {
 
     DB_TRACE(LOG_ALL, "using debug level: %d", db_getdebug());
 
-    num_targets = argc - optind;
-    if (mode == 0xFF || num_threads == 0 || listenport == 0 ||
-            (num_threads > MAXTHREADS) || (num_targets == 0))
+    settings.num_targets = argc - optind;
+    if (settings.mode == UTEE_MODE_INVALID ||
+            settings.num_threads == 0 ||
+            settings.listenport == 0 ||
+            settings.num_threads > MAXTHREADS ||
+            settings.num_targets == 0)
         usage(argc, argv);
 
     signal(SIGUSR1, sig_handler_toggle_optional_output);
@@ -264,15 +284,16 @@ int main(int argc, char *argv[]) {
     signal(SIGUSR2, sig_handler_ignore);
 
     DB_TRACE(LOG_INFO, "setting up listener socket...");
-    lsock = open_listener_socket(listenaddr, listenport, pipe_size);
+    lsock = open_listener_socket(settings.listenaddr, settings.listenport,
+            settings.pipe_size);
 
     bzero(tds, sizeof(tds));
     // this one loops over all threads
-    for (cnt = 0; cnt < num_threads; cnt++) {
+    for (cnt = 0; cnt < settings.num_threads; cnt++) {
         tds[cnt].thread_id = cnt;
         tds[cnt].sockfd = lsock;
-        tds[cnt].targets = targets;
-        tds[cnt].num_targets = num_targets;
+        tds[cnt].targets = settings.targets;
+        tds[cnt].num_targets = settings.num_targets;
         tds[cnt].hashtable = NULL;
         tds[cnt].hashtable_ro = NULL;
         tds[cnt].hashtable_ro_old = NULL;
@@ -280,23 +301,29 @@ int main(int argc, char *argv[]) {
 
         tds[cnt].deduplication_hashtable = &deduplication_hashtable;
 
-        switch (mode) {
-            case 'r':
+        switch (settings.mode) {
+            case UTEE_MODE_DISTRIBUTE:
                 tds[cnt].features.distribute = 1;
-                tds[cnt].features.load_balanced_dist = loadbalanced_dist_enabled;
-                tds[cnt].features.hash_based_dist = hash_based_dist_enabled;
-                tds[cnt].features.lb_bytecnt_based = loadbalance_bytecnt_based;
+                tds[cnt].features.load_balanced_dist = \
+                        settings.distribute.loadbalanced_dist_enabled;
+                tds[cnt].features.hash_based_dist = \
+                        settings.distribute.hash_based_dist_enabled;
+                tds[cnt].features.lb_bytecnt_based = \
+                        settings.distribute.bytecnt_based;
             break;
-            case 'd':
+            case UTEE_MODE_DUPLICATE:
                 tds[cnt].features.duplicate = 1;
                 optional_output_enabled = 1;
             break;
         }
-        tds[cnt].features.deduplicate = deduplication_enabled;
-        tds[cnt].feature_settings.deduplication_timeout = deduplication_timeout;
+        tds[cnt].features.deduplicate = settings.deduplicate.enabled;
+        tds[cnt].feature_settings.deduplication_timeout = \
+                settings.deduplicate.timeout;
 
-        tds[cnt].deduplication_pkt_src_id_idx = deduplication_pkt_src_id_idx;
-        tds[cnt].deduplication_pkt_id_idx = deduplication_pkt_id_idx;
+        tds[cnt].deduplication_pkt_src_id_idx = \
+                settings.deduplicate.pkt_src_id_idx;
+        tds[cnt].deduplication_pkt_id_idx = \
+                settings.deduplicate.pkt_id_idx;
     }
     smp_mb__after_atomic();
 
@@ -304,9 +331,10 @@ int main(int argc, char *argv[]) {
     atomic_set(&now, 0);
 
     // set all targets
-    init_sending_sockets(targets, argc - optind, &(argv[optind]), pipe_size);
+    init_sending_sockets(settings.targets, argc - optind, &(argv[optind]),
+            settings.pipe_size);
 
-    if (deduplication_enabled) {
+    if (settings.deduplicate.enabled) {
         if (pthread_rwlock_init(&deduplication_lock, NULL) != 0) {
             DB_TRACE(LOG_CRITICAL, "lock init failed");
             exit(-1);
@@ -314,7 +342,7 @@ int main(int argc, char *argv[]) {
     }
 
     // this one loops over all threads and starts them
-    for (cnt = 0; cnt < num_threads; cnt++) {
+    for (cnt = 0; cnt < settings.num_threads; cnt++) {
         pthread_create(&thread[cnt], NULL, &tee, (void *) &tds[cnt]);
     }
 
@@ -323,18 +351,22 @@ int main(int argc, char *argv[]) {
     // main thread to catch/handle signals, trigger load-balancing, if enabled
     while (run_flag) {
 
-        if (loadbalanced_dist_enabled) {
-            load_balance(tds, num_threads, threshold, reorder_threshold,
+        if (settings.distribute.loadbalanced_dist_enabled) {
+            load_balance(
+                    tds,
+                    settings.num_threads,
+                    settings.distribute.threshold,
+                    settings.distribute.reorder_threshold,
                     &master_hashtable);
         }
 
-        if (deduplication_enabled) {
+        if (settings.deduplicate.enabled) {
             deduplicate_maintenance(
                     tds,
-                    num_threads,
-                    deduplication_threshold,
-                    deduplication_frequency_reset_interval,
-                    deduplication_inner_ht_resize_factor,
+                    settings.num_threads,
+                    settings.deduplicate.threshold,
+                    settings.deduplicate.frequency_reset_interval,
+                    settings.deduplicate.inner_ht_resize_factor,
                     &deduplication_lock);
         }
 
@@ -342,10 +374,10 @@ int main(int argc, char *argv[]) {
     }
     DB_TRACE(LOG_INFO, "shutting down");
 
-    for (cnt = 0; cnt < num_threads; cnt++) {
-        pthread_join(thread[cnt], &res);
-        if (res)
-            free(res);
+    for (cnt = 0; cnt < settings.num_threads; cnt++) {
+        pthread_join(thread[cnt], &thread_result);
+        if (thread_result)
+            free(thread_result);
     }
 
     ht_delete_all(&master_hashtable);
