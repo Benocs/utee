@@ -1856,7 +1856,7 @@ uint8_t deduplicate_packet(
     if (atomic_read(&(ht_e->inner_ht[pkt_idx].value)) &&
             ((atomic_read(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen)) + timeout) >= now) &&
             pkt_id != atomic_read(&(ht_e->inner_ht[pkt_idx].value))) {
-        DB_TRACE(LOG_INFO, "collision detected: packet identifier "
+        DB_TRACE(LOG_WARN, "collision detected: packet identifier "
                 "and value do not match: id: %lu, value: %lu - overwriting",
                 pkt_id,
                 atomic_read(&(ht_e->inner_ht[pkt_idx].value)));
