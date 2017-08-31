@@ -1833,6 +1833,12 @@ uint8_t deduplicate_packet(
             atomic_read(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen)),
             atomic_read(&(ht_e->inner_ht[pkt_idx].value)));
 
+    if (td->features.analyze) {
+        DB_TRACE(LOG_ALL,
+                "analysis\tdedup\t%u %u %u\t%lu\t%u",
+                key.addr, key.port, key.id, pkt_id, pkt_idx);
+    }
+
     if (atomic_read(&(ht_e->inner_ht[pkt_idx].value)) &&
             ((atomic_read(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen)) + timeout) >= now) &&
             pkt_id != atomic_read(&(ht_e->inner_ht[pkt_idx].value))) {
