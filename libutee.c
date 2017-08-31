@@ -1078,7 +1078,7 @@ void *tee(void *arg0) {
                             break;
                     }
 
-                    if ( written != iph->tot_len) {
+                    if (written != iph->tot_len) {
                         // handle this short write - log and move on
                         DB_CALL(LOG_ERROR,
                                 char addrbuf0[INET6_ADDRSTRLEN];
