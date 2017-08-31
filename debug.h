@@ -21,6 +21,8 @@
 #define DB_ACTIVE 0
 #endif /* DEBUG */
 
+#define LOG_ALL          0
+
 #define LOG_CRITICAL    10
 #define LOG_ERROR       20
 #define LOG_WARN        30
@@ -38,8 +40,6 @@
 #define LOG_DEBUG7      57
 #define LOG_DEBUG8      58
 #define LOG_DEBUG9      59
-
-#define LOG_ALL        255
 
 #define DB_TRACE_BUF_SIZE 255
 #define DB_TRACE_LOGLVL_BUF_SIZE 10
