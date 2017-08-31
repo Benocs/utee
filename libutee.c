@@ -44,12 +44,17 @@
 
 // variables that are changed when a signal arrives
 volatile uint8_t optional_output_enabled = 0;
+// global run flag. if 0, all threads will shut themselves down
 volatile uint8_t run_flag = 1;
 
+// thread settings. needs to be global so that
+// the signal handlers can write to it
 struct s_thread_data tds[MAXTHREADS];
 uint16_t num_threads = 0;
 
+// latest master hashtable index
 atomic_t master_hashtable_idx;
+// current time
 atomic_t now;
 pthread_rwlock_t deduplication_lock;
 

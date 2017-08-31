@@ -396,11 +396,15 @@ void sig_handler_ignore(int signum);
 
 // variables that are changed when a signal arrives
 extern volatile uint8_t optional_output_enabled;
+// global run flag. if 0, all threads will shut themselves down
 extern volatile uint8_t run_flag;
 
+// thread settings. needs to be global so that
+// the signal handlers can write to it
 extern struct s_thread_data tds[MAXTHREADS];
 extern uint16_t num_threads;
 
+// latest master hashtable index
 extern atomic_t master_hashtable_idx;
 // notion of time.
 // either represented by seconds since epoch or by packets since program start
