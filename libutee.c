@@ -864,13 +864,234 @@ void cb_shutdown_load_balance(
 void cb_shutdown_duplicate(void) {
 }
 
+/************************ packet loop methods ********************************/
+int packet_read(
+        struct s_thread_data* td,
+        struct s_hashable** hashtable,
+        uint8_t opcode,
+        struct sockaddr_storage* source_addr,
+        char* data) {
+
+    socklen_t addr_len = sizeof(struct sockaddr_storage);
+    int numbytes;
+
+    // callback pre packet read
+    switch (opcode) {
+        case OPCODE_LOAD_BALANCE:
+            hashtable = cb_pre_pkt_read_load_balance(td, hashtable);
+            break;
+        case OPCODE_DUPLICATE:
+            cb_pre_pkt_read_duplicate();
+            break;
+    }
+
+#ifdef USE_SELECT_READ
+    int retval;
+    fd_set rfds;
+    struct timeval tv;
+
+    tv.tv_sec = 0;
+    tv.tv_usec = 100000;
+    FD_SET(td->sockfd, &rfds);
+    retval = select((td->sockfd)+1, &rfds, NULL, NULL, &tv);
+
+    if (retval <= 0) {
+        if (retval == -1)
+            perror("select()");
+        numbytes = retval;
+        goto ret;
+    }
+#endif
+
+    numbytes = recvfrom(
+            td->sockfd,
+            data,
+            BUFLEN-sizeof(struct iphdr)-sizeof(struct udphdr),
+            0,
+            (struct sockaddr *)source_addr,
+            &addr_len);
+
+    if (numbytes == -1) {
+        perror("recvfrom");
+        goto ret;
+    }
+
+    if (numbytes > 1472) {
+        DB_TRACE(LOG_ERROR, "listener %d: packet is %d bytes long. "
+                "cropping to 1472",
+                td->thread_id, numbytes);
+        numbytes = 1472;
+    }
+    data[numbytes] = '\0';
+
+ret:
+    return numbytes;
+}
+
+uint8_t packet_post_receive(
+        struct s_thread_data* td,
+        struct s_hashable** hashtable,
+        uint8_t opcode,
+        struct sockaddr_storage* source_addr,
+        struct iphdr *iph,
+        struct udphdr *udph,
+        char* data,
+        int numbytes,
+        uint64_t now) {
+    uint8_t dedup_drop_pkt;
+
+    if (td->features.deduplicate) {
+        // callback packet deduplicate / post receive
+        switch (opcode) {
+            case OPCODE_LOAD_BALANCE:
+                dedup_drop_pkt = cb_deduplicate_load_balance(
+                        td, source_addr, iph, udph, data, numbytes, now);
+                break;
+            case OPCODE_DUPLICATE:
+                dedup_drop_pkt = cb_deduplicate_duplicate();
+                break;
+        }
+
+        DB_CALL(LOG_DEBUG5,
+                if (dedup_drop_pkt) {
+                        char addrbuf0[INET6_ADDRSTRLEN];
+                        DB_TRACE(LOG_DEBUG5, "listener %d: "
+                                "dropping duplicate packet from %s:%u",
+                                td->thread_id,
+                                get_ip(source_addr, addrbuf0),
+                                get_port(source_addr));
+                }
+                );
+    }
+    return dedup_drop_pkt;
+}
+
+void packet_process(
+        struct s_thread_data* td,
+        struct s_hashable** ht_e,
+        uint8_t opcode,
+        struct sockaddr_storage* source_addr,
+        struct iphdr* iph,
+        struct udphdr* udph,
+        int numbytes,
+        t_target** target,
+        uint16_t target_id,
+        struct sockaddr_in** target_addr
+        ) {
+    // callback packet process
+    switch (opcode) {
+        case OPCODE_LOAD_BALANCE:
+            *target = cb_pkt_process_load_balance(
+                    td, source_addr,
+                    numbytes, iph, udph,
+                    ht_e);
+            *target_addr = (struct sockaddr_in*)&((*target)->dest);
+            break;
+        case OPCODE_DUPLICATE:
+            *target_addr = (struct sockaddr_in*)&(td->targets[target_id].dest);
+            cb_pkt_process_duplicate(
+                    *target_addr,
+                    target_id, td, source_addr,
+                    numbytes, iph, udph);
+            break;
+    }
+}
+
+int8_t packet_send(
+        struct s_thread_data* td,
+        struct s_hashable* ht_e,
+        uint8_t opcode,
+        struct s_features *features,
+        t_target* target,
+        struct sockaddr_in* target_addr,
+        char* datagram
+        ) {
+    int32_t written;
+    int8_t retval;
+
+    struct iphdr *iph = (struct iphdr *)datagram;
+    struct udphdr *udph = (/*u_int8_t*/void *)iph + sizeof(struct iphdr);
+
+#if defined(USE_SELECT_READ) || defined(USE_SELECT_WRITE)
+    fd_set wfds;
+    struct timeval tv;
+#endif
+
+
+    do {
+#ifdef USE_SELECT_WRITE
+        do {
+            tv.tv_sec = 0;
+            tv.tv_usec = 100000;
+            FD_SET(target->fd, &wfds);
+            retval = select((target->fd)+1, NULL, &wfds, NULL, &tv);
+
+            if (retval == -1)
+                perror("select()");
+        } while (retval <= 0);
+#endif
+        if ((written = sendto(
+                        target->fd,
+                        datagram,
+                        iph->tot_len, 0,
+                        (struct sockaddr *) target_addr,
+                        sizeof(*target_addr))) < 0) {
+            perror("sendto failed");
+            DB_TRACE(LOG_ERROR, "listener %d: error in write %s - %d",
+                    td->thread_id, strerror(errno), errno);
+            retval = -1;
+        }
+        else {
+            // callback post packet send
+            switch (opcode) {
+                case OPCODE_LOAD_BALANCE:
+                    cb_post_pkt_send_load_balance(
+                            features,
+                            written,
+                            ht_e,
+                            target);
+                    break;
+                case OPCODE_DUPLICATE:
+                    cb_post_pkt_send_duplicate();
+                    break;
+            }
+
+            if (written != iph->tot_len) {
+                // handle this short write - log and move on
+                DB_CALL(LOG_ERROR,
+                        char addrbuf0[INET6_ADDRSTRLEN];
+                        char addrbuf1[INET6_ADDRSTRLEN];
+                        DB_TRACE(LOG_ERROR, "listener %d: "
+                                "short write: "
+                                "sent packet: %s:%u => %s:%u: "
+                                "len: %u written: %d",
+                                td->thread_id,
+                                get_ip4_uint(iph->saddr, addrbuf0),
+                                get_port4_uint(udph->source),
+                                get_ip4_uint(iph->daddr, addrbuf1),
+                                get_port4_uint(udph->dest),
+                                iph->tot_len, written);
+                        );
+                // denote error
+                retval = -1;
+            }
+            else {
+                // denote success
+                retval = 1;
+            }
+        }
+    } while (retval <= 0);
+
+    return written;
+}
+
 /************************ packet loop ****************************************/
 
 void *tee(void *arg0) {
     struct s_thread_data *td = (struct s_thread_data *)arg0;
     struct s_features *features = &(td->features);
 
-    uint8_t opcode = OPCODE_LOAD_BALANCE;
+    uint8_t opcode;
     if (features->distribute)
         opcode = OPCODE_LOAD_BALANCE;
     else if (features->duplicate)
@@ -883,7 +1104,6 @@ void *tee(void *arg0) {
     // incoming packets
     int numbytes = 0;
     struct sockaddr_storage source_addr;
-    socklen_t addr_len = sizeof(source_addr);
 
     // outgoing packets
     char datagram[BUFLEN];
@@ -903,119 +1123,35 @@ void *tee(void *arg0) {
 #endif
 
     // helper variables
-
+    uint64_t local_now;
     uint16_t cnt;
-    int retval;
-
-#if defined(USE_SELECT_READ) || defined(USE_SELECT_WRITE)
-    fd_set rfds;
-    fd_set wfds;
-    struct timeval tv;
-    FD_ZERO(&rfds);
-    FD_ZERO(&wfds);
-#endif
 
     // flag to denote whether to drop a duplicate packet
-    uint8_t dedup_drop_pkt = 0;
+    uint8_t drop_pkt = 0;
 
     while (run_flag) {
-
-        // callback pre packet read
-        switch (opcode) {
-            case OPCODE_LOAD_BALANCE:
-                hashtable = cb_pre_pkt_read_load_balance(td, hashtable);
-                break;
-            case OPCODE_DUPLICATE:
-                cb_pre_pkt_read_duplicate();
-                break;
-        }
-
-#ifdef USE_SELECT_READ
-        tv.tv_sec = 0;
-        tv.tv_usec = 100000;
-        FD_SET(td->sockfd, &rfds);
-        retval = select((td->sockfd)+1, &rfds, NULL, NULL, &tv);
-
-        if (retval == -1) {
-            perror("select()");
-            continue;
-        }
-        else if (!retval) {
-            continue;
-        }
-#endif
-
-        numbytes = recvfrom(
-                td->sockfd,
-                data,
-                BUFLEN-sizeof(struct iphdr)-sizeof(struct udphdr),
-                0,
-                (struct sockaddr *)&source_addr,
-                &addr_len);
-
-        if (numbytes == -1) {
-            perror("recvfrom");
-            continue;
-        }
-
-        if (numbytes > 1472) {
-            DB_TRACE(LOG_ERROR, "listener %d: packet is %d bytes long. "
-                    "cropping to 1472",
-                    td->thread_id, numbytes);
-            numbytes = 1472;
-        }
-        data[numbytes] = '\0';
 
         smp_mb__before_atomic();
         // use packet counter as time
         // atomic_inc(&now);
+        // TODO: move to maintenance methods: use wall clock as time
         // use wall clock as time
         atomic_set(&now, time(NULL));
+        local_now = atomic_read(&now);
         smp_mb__after_atomic();
 
-        if (td->features.deduplicate) {
-            // callback packet deduplicate / post receive
-            switch (opcode) {
-                case OPCODE_LOAD_BALANCE:
-                    dedup_drop_pkt = cb_deduplicate_load_balance(
-                            td, &source_addr, iph, udph, data, numbytes, now);
-                    break;
-                case OPCODE_DUPLICATE:
-                    dedup_drop_pkt = cb_deduplicate_duplicate();
-                    break;
-            }
+        numbytes = packet_read(td, hashtable, opcode, &source_addr, data);
+        if (numbytes <= 0)
+            continue;
 
-            if (dedup_drop_pkt) {
-                DB_CALL(LOG_DEBUG5,
-                        char addrbuf0[INET6_ADDRSTRLEN];
-                        DB_TRACE(LOG_DEBUG5, "listener %d: "
-                                "dropping duplicate packet from %s:%u",
-                                td->thread_id,
-                                get_ip(&source_addr, addrbuf0),
-                                get_port(&source_addr));
-                        );
-                continue;
-            }
-        }
+        drop_pkt = packet_post_receive(td, hashtable, opcode, &source_addr,
+                    iph, udph, data, numbytes, local_now);
+        if (drop_pkt)
+            continue;
 
         for (cnt=0; cnt < td->num_targets; cnt++) {
-            // callback packet process
-            switch (opcode) {
-                case OPCODE_LOAD_BALANCE:
-                    target = cb_pkt_process_load_balance(
-                            td, &source_addr,
-                            numbytes, iph, udph,
-                            &ht_e);
-                    target_addr = (struct sockaddr_in*)&(target->dest);
-                    break;
-                case OPCODE_DUPLICATE:
-                    target_addr = (struct sockaddr_in*)&(td->targets[cnt].dest);
-                    cb_pkt_process_duplicate(
-                            target_addr,
-                            cnt, td, &source_addr,
-                            numbytes, iph, udph);
-                    break;
-            }
+            packet_process(td, &ht_e, opcode, &source_addr,
+                    iph, udph, numbytes, &target, cnt, &target_addr);
 
             DB_CALL(LOG_DEBUG9,
                     char addrbuf0[INET6_ADDRSTRLEN];
@@ -1038,70 +1174,9 @@ void *tee(void *arg0) {
                             iph->tot_len);
                     );
 
-            do {
-#ifdef USE_SELECT_WRITE
-                do {
-                    tv.tv_sec = 0;
-                    tv.tv_usec = 100000;
-                    FD_SET(target->fd, &wfds);
-                    retval = select((target->fd)+1, NULL, &wfds, NULL, &tv);
+            packet_send(td, ht_e, opcode, features, target, target_addr,
+                    datagram);
 
-                    if (retval == -1)
-                        perror("select()");
-                } while (retval <= 0);
-#endif
-                int32_t written;
-                if ((written = sendto(
-                                target->fd,
-                                datagram,
-                                iph->tot_len, 0,
-                                (struct sockaddr *) target_addr,
-                                sizeof(*target_addr))) < 0) {
-                    perror("sendto failed");
-                    DB_TRACE(LOG_ERROR, "listener %d: error in write %s - %d",
-                            td->thread_id, strerror(errno), errno);
-                    retval = -1;
-                }
-                else {
-                    // callback post packet send
-                    switch (opcode) {
-                        case OPCODE_LOAD_BALANCE:
-                            cb_post_pkt_send_load_balance(
-                                    features,
-                                    written,
-                                    ht_e,
-                                    target);
-                            break;
-                        case OPCODE_DUPLICATE:
-                            cb_post_pkt_send_duplicate();
-                            break;
-                    }
-
-                    if (written != iph->tot_len) {
-                        // handle this short write - log and move on
-                        DB_CALL(LOG_ERROR,
-                                char addrbuf0[INET6_ADDRSTRLEN];
-                                char addrbuf1[INET6_ADDRSTRLEN];
-                                DB_TRACE(LOG_ERROR, "listener %d: "
-                                        "short write: "
-                                        "sent packet: %s:%u => %s:%u: "
-                                        "len: %u written: %d",
-                                        td->thread_id,
-                                        get_ip4_uint(iph->saddr, addrbuf0),
-                                        get_port4_uint(udph->source),
-                                        get_ip4_uint(iph->daddr, addrbuf1),
-                                        get_port4_uint(udph->dest),
-                                        iph->tot_len, written);
-                                );
-                        // denote error
-                        retval = -1;
-                    }
-                    else {
-                        // denote success
-                        retval = 1;
-                    }
-                }
-            } while (retval <= 0);
             // check whether features->duplicate == 1
             // if yes, iterate over remaining targets and
             // also send packets to them

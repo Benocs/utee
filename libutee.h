@@ -277,6 +277,92 @@ uint64_t get_dedup_inner_ht_packet_id(char* data, int numdatabytes,
                 uint32_t id_idx);
 
 /************************ packet callbacks ***********************************/
+struct s_hashable** cb_pre_pkt_read_load_balance(
+		struct s_thread_data *td,
+		struct s_hashable** hashtable);
+
+void cb_pre_pkt_read_duplicate(void);
+
+uint8_t cb_deduplicate_load_balance(
+		struct s_thread_data *td,
+		struct sockaddr_storage* source_addr,
+		struct iphdr *iph,
+		struct udphdr *udph,
+		char* data,
+		int numdatabytes,
+		uint64_t now);
+
+uint8_t cb_deduplicate_duplicate(void);
+
+t_target*  cb_pkt_process_load_balance(
+		struct s_thread_data *td,
+		struct sockaddr_storage* source_addr,
+		int numbytes,
+		struct iphdr *iph,
+		struct udphdr *udph,
+		struct s_hashable** ptr_ht_e);
+
+void cb_pkt_process_duplicate(
+		struct sockaddr_in* target_addr,
+		uint8_t target_cnt,
+		struct s_thread_data *td,
+		struct sockaddr_storage* source_addr,
+		int numbytes,
+		struct iphdr *iph,
+		struct udphdr *udph);
+
+void cb_post_pkt_send_load_balance(
+		struct s_features *features,
+		int32_t bytes_written,
+		struct s_hashable* ht_e,
+		t_target* target);
+
+void cb_post_pkt_send_duplicate(void);
+
+void cb_shutdown_load_balance(
+		struct s_hashable** hashtable,
+		struct s_thread_data* td);
+
+void cb_shutdown_duplicate(void);
+
+/************************ packet loop methods ********************************/
+int packet_read(struct s_thread_data* td,
+                struct s_hashable** hashtable,
+                uint8_t opcode,
+                struct sockaddr_storage* source_addr,
+                char* data);
+
+uint8_t packet_post_receive(
+                struct s_thread_data* td,
+                struct s_hashable** hashtable,
+                uint8_t opcode,
+                struct sockaddr_storage* source_addr,
+                struct iphdr *iph,
+                struct udphdr *udph,
+                char* data,
+                int numbytes,
+                uint64_t now);
+
+void packet_process(
+		struct s_thread_data* td,
+		struct s_hashable** ht_e,
+		uint8_t opcode,
+		struct sockaddr_storage* source_addr,
+		struct iphdr* iph,
+		struct udphdr* udph,
+		int numbytes,
+		t_target** target,
+		uint16_t target_id,
+		struct sockaddr_in** target_addr);
+
+int8_t packet_send(
+		struct s_thread_data* td,
+		struct s_hashable* ht_e,
+		uint8_t opcode,
+                struct s_features *features,
+                t_target* target,
+                struct sockaddr_in* target_addr,
+                char* datagram);
 
 /************************ packet loop ****************************************/
 void *tee(void *arg0);
