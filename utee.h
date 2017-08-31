@@ -74,7 +74,8 @@ typedef struct {
     uint32_t frequency_reset_interval;
     uint32_t pkt_src_id_idx;
     uint32_t pkt_id_idx;
-    double   inner_ht_resize_factor;
+    uint32_t inner_ht_load_factor;
+    uint32_t inner_ht_resize_factor;
 } t_settings_deduplicate;
 
 typedef struct {

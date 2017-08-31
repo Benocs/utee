@@ -1891,7 +1891,8 @@ void deduplicate_maintenance(
         uint16_t num_threads,
         uint32_t deduplication_threshold,
         uint32_t deduplication_frequency_reset_interval,
-        double resize_factor,
+        uint32_t load_factor,
+        uint32_t resize_factor,
         pthread_rwlock_t* deduplication_lock) {
 
     struct s_deduplication_hashable** deduplication_hashtable = \
@@ -1943,15 +1944,19 @@ void deduplicate_maintenance(
             ht_e->update_counter_timestamp_start = tnow;
         }
 
-        if (ht_e->update_frequency > ht_e->dedup_ht_size / 2.0 / timeout) {
+        if (ht_e->update_frequency >
+                ((double)ht_e->dedup_ht_size / load_factor / timeout)) {
             dedup_ht_size = (uint32_t)(
-                    ht_e->update_frequency * 2.0 * timeout * resize_factor);
+                    ht_e->update_frequency * load_factor * timeout *
+                    resize_factor);
 
             DB_TRACE(LOG_DEBUG3, "increasing inner ht from %u to %u due to "
-                    "update frequency %.0fHz and packet timeout: %us",
+                    "update frequency %.0fHz, load_factor: %u and "
+                    "packet timeout: %us",
                     ht_e->dedup_ht_size,
                     dedup_ht_size,
                     ht_e->update_frequency,
+                    load_factor,
                     timeout);
 
             ht_e->inner_ht = allocate_inner_ht(

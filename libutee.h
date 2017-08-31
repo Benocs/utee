@@ -388,7 +388,8 @@ void deduplicate_maintenance(
                 uint16_t num_threads,
                 uint32_t deduplication_threshold,
                 uint32_t deduplication_frequency_reset_interval,
-                double resize_factor,
+                uint32_t load_factor,
+                uint32_t resize_factor,
                 pthread_rwlock_t* deduplication_lock);
 
 void sig_handler_toggle_optional_output(int signum);

@@ -73,6 +73,7 @@ void usage(int argc, char *argv[]) {
             "\t[-t <load balance inter-target threshold>]\n"
             "\t[-b]\tuse byte count instead of packets to measure load\n"
             "\n\toptional deduplication configuration\n"
+            "\t[-f <deduplication inner hash table load factor>]\n"
             "\t[-I <deduplication maintenance interval>]\n"
             "\t[-p <deduplication packet source index>]\n"
             "\t[-P <deduplication packet id index>]\n"
@@ -114,6 +115,7 @@ void default_settings_deduplicate(t_settings_deduplicate* settings) {
     settings->frequency_reset_interval = 5;
     settings->pkt_src_id_idx = 3;
     settings->pkt_id_idx = 2;
+    settings->inner_ht_load_factor = 4;
     settings->inner_ht_resize_factor = 4;
 }
 
@@ -148,7 +150,7 @@ void default_settings(t_settings* settings) {
 }
 
 void parse_argv(int argc, char *argv[], t_settings* settings) {
-    static char const optstr[] = "abd:DHl:Lm:n:p:P:i:I:r:R:t:T:v";
+    static char const optstr[] = "abd:Df:Hl:Lm:n:p:P:i:I:r:R:t:T:v";
     int c;
 
     opterr = 0;
@@ -160,8 +162,17 @@ void parse_argv(int argc, char *argv[], t_settings* settings) {
                 settings->analyze_mode = 1;
                 break;
             case 'd':
-                db_setdebug(atoi(optarg));
+                db_setdebug(strtoul(optarg, NULL, 10));
+                DB_TRACE(LOG_INFO,
+                        "debug level: %u", db_getdebug());
                 break;
+            case 'f':
+                settings->deduplicate.inner_ht_load_factor = strtoul(
+                        optarg, NULL, 10);
+                DB_TRACE(LOG_INFO,
+                        "deduplicate inner hash table load factor: %u",
+                        settings->deduplicate.inner_ht_load_factor);
+            break;
             case 'l':
                 split_addr(optarg, settings->listenaddr,
                         &(settings->listenport));
@@ -212,7 +223,7 @@ void parse_argv(int argc, char *argv[], t_settings* settings) {
                 settings->deduplicate.inner_ht_resize_factor = strtoul(
                         optarg, NULL, 10);
                 DB_TRACE(LOG_INFO,
-                        "deduplicate inner hash table resize factor: %f",
+                        "deduplicate inner hash table resize factor: %u",
                         settings->deduplicate.inner_ht_resize_factor);
             break;
             case 'b':
@@ -251,6 +262,8 @@ void parse_argv(int argc, char *argv[], t_settings* settings) {
                         settings->distribute.reorder_threshold);
             break;
             default:
+                DB_TRACE(LOG_CRITICAL,
+                        "unknown option: %c", c);
                 usage(argc, argv);
         }
 
@@ -411,6 +424,7 @@ int main(int argc, char *argv[]) {
                     settings.num_threads,
                     settings.deduplicate.threshold,
                     settings.deduplicate.frequency_reset_interval,
+                    settings.deduplicate.inner_ht_load_factor,
                     settings.deduplicate.inner_ht_resize_factor,
                     &deduplication_lock);
         }
