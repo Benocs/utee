@@ -91,6 +91,8 @@ typedef struct {
     t_settings_duplicate duplicate;
 
     t_settings_deduplicate deduplicate;
+
+    uint8_t analyze_mode;
 } t_settings;
 
 #endif

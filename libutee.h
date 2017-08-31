@@ -125,6 +125,7 @@ struct s_features {
     uint8_t duplicate;
     uint8_t lb_bytecnt_based;
     uint8_t deduplicate;
+    uint8_t analyze;
 };
 
 struct s_hashable {

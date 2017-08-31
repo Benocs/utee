@@ -1153,8 +1153,9 @@ void *tee(void *arg0) {
                             iph->tot_len);
                     );
 
-            packet_send(td, ht_e, opcode, features, target, target_addr,
-                    datagram);
+            if (!(features->analyze))
+                packet_send(td, ht_e, opcode, features, target, target_addr,
+                        datagram);
 
             // check whether features->duplicate == 1
             // if yes, iterate over remaining targets and

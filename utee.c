@@ -64,6 +64,7 @@ void usage(int argc, char *argv[]) {
             "addresses\n"
             "\n\toptional feature switches for all modes\n"
             "\t[-D]\tdeduplicate packets\n"
+            "\t[-a]\tanalyze mode (dry run): no packets will be send\n"
             "\n\toptional feature switches for mode 'distribute'\n"
             "\t[-H]\thash-based target selection\n"
             "\t[-L]\thash-based load balancing of targets\n"
@@ -147,12 +148,17 @@ void default_settings(t_settings* settings) {
 }
 
 void parse_argv(int argc, char *argv[], t_settings* settings) {
-    static char const optstr[] = "bd:DHl:Lm:n:p:P:i:I:r:R:t:T:v";
+    static char const optstr[] = "abd:DHl:Lm:n:p:P:i:I:r:R:t:T:v";
     int c;
 
     opterr = 0;
     while ((c = getopt (argc, argv, optstr)) != -1)
         switch (c) {
+            case 'a':
+                DB_TRACE(LOG_ALL, "packet analyze mode. "
+                        "no packets will be send");
+                settings->analyze_mode = 1;
+                break;
             case 'd':
                 db_setdebug(atoi(optarg));
                 break;
@@ -326,6 +332,8 @@ void setup_thread_data(t_settings* settings, int listen_socket,
                 settings->deduplicate.pkt_src_id_idx;
         tds[cnt].deduplication_pkt_id_idx = \
                 settings->deduplicate.pkt_id_idx;
+
+        tds[cnt].features.analyze = settings->analyze_mode;
     }
 }
 
