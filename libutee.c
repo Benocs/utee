@@ -572,7 +572,7 @@ struct s_deduplication_hashable* dedup_ht_get_add(
         ht_e->update_counter_value++;
         if (atomic_read(&now) > ht_e->update_counter_timestamp_start) {
             DB_TRACE(LOG_DEBUG7, "update: key: %u, %u, %u counter: %u, "
-                        "tdiff: %lu, frequency: %f",
+                        "tdiff: %lu, frequency: %.0f",
                         ht_e->key.addr,
                         ht_e->key.port,
                         ht_e->key.id,
@@ -1889,7 +1889,7 @@ void deduplicate_maintenance(
                     ht_e->update_frequency * 2.0 * timeout * resize_factor);
 
             DB_TRACE(LOG_DEBUG3, "increasing inner ht from %u to %u due to "
-                    "update frequency %fHz and packet timeout: %us",
+                    "update frequency %.0fHz and packet timeout: %us",
                     ht_e->dedup_ht_size,
                     dedup_ht_size,
                     ht_e->update_frequency,
