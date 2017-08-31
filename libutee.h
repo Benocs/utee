@@ -260,7 +260,7 @@ struct s_deduplication_hashable* dedup_ht_get(
 struct s_deduplication_hashable* dedup_ht_get_add(
         struct s_deduplication_hashable **ht,
         t_deduplication_hashable_key *key,
-        atomic_t now);
+        uint64_t now);
 
 void dedup_ht_delete_all(struct s_deduplication_hashable **ht);
 
@@ -305,7 +305,7 @@ uint8_t deduplicate_packet(
                 struct udphdr *udph,
                 char* data,
                 int numdatabytes,
-                atomic_t now);
+                uint64_t now);
 
 void deduplicate_maintenance(
                 struct s_thread_data* tds,

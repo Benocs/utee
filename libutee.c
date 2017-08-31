@@ -530,7 +530,7 @@ void delete_inner_ht(
 struct s_deduplication_hashable* dedup_ht_get_add(
         struct s_deduplication_hashable **ht,
         t_deduplication_hashable_key *key,
-        atomic_t now) {
+        uint64_t now) {
     struct s_deduplication_hashable *ht_e = NULL;
     double freq;
 
@@ -553,7 +553,7 @@ struct s_deduplication_hashable* dedup_ht_get_add(
         ht_e->key.addr = key->addr;
         ht_e->key.port = key->port;
         ht_e->key.id = key->id;
-        ht_e->update_counter_timestamp_start = atomic_read(&now);
+        ht_e->update_counter_timestamp_start = now;
         ht_e->update_counter_value = 1;
         ht_e->inner_ht = allocate_inner_ht(0, INITIAL_DEDUP_HT_SIZE, NULL);
         ht_e->dedup_ht_size = INITIAL_DEDUP_HT_SIZE;
@@ -570,19 +570,18 @@ struct s_deduplication_hashable* dedup_ht_get_add(
         }
 
         ht_e->update_counter_value++;
-        if (atomic_read(&now) > ht_e->update_counter_timestamp_start) {
+        if (now > ht_e->update_counter_timestamp_start) {
             DB_TRACE(LOG_DEBUG7, "update: key: %u, %u, %u counter: %u, "
                         "tdiff: %lu, frequency: %.0f",
                         ht_e->key.addr,
                         ht_e->key.port,
                         ht_e->key.id,
                         ht_e->update_counter_value,
-                        atomic_read(&now) - \
-                            ht_e->update_counter_timestamp_start,
+                        now - ht_e->update_counter_timestamp_start,
                         ht_e->update_frequency);
 
             freq = (double)ht_e->update_counter_value / \
-                   (atomic_read(&now) - ht_e->update_counter_timestamp_start);
+                   (now - ht_e->update_counter_timestamp_start);
             if (! (ht_e->update_frequency)) {
                 ht_e->update_frequency = freq;
             }
@@ -717,7 +716,7 @@ uint8_t cb_deduplicate_load_balance(
         struct udphdr *udph,
         char* data,
         int numdatabytes,
-        atomic_t now) {
+        uint64_t now) {
     return deduplicate_packet(td, source_addr, iph, udph, data, numdatabytes,
             now);
 }
@@ -1701,7 +1700,7 @@ uint8_t deduplicate_packet(
         struct udphdr *udph,
         char* data,
         int numdatabytes,
-        atomic_t now) {
+        uint64_t now) {
     uint8_t drop_pkt = 0;
 
     struct s_deduplication_hashable** deduplication_hashtable = \
@@ -1725,21 +1724,15 @@ uint8_t deduplicate_packet(
     uint32_t pkt_idx;
     uint32_t hashvalue;
 
-    uint64_t tnow;
-
     memset(&key, 0, sizeof(t_deduplication_hashable_key));
     dedup_create_ht_key(&key, source_addr, data, numdatabytes,
             td->deduplication_pkt_src_id_idx);
-
-    smp_mb__before_atomic();
-    tnow = atomic_read(&now);
-    smp_mb__after_atomic();
 
     DB_CALL(LOG_DEBUG9,
             char addrbuf0[INET6_ADDRSTRLEN];
             DB_TRACE(LOG_DEBUG9, "now: %lu, source: %s:%u@%u, "
                     "key: (%u, %u, %u)",
-                    tnow,
+                    now,
                     get_ip(source_addr, addrbuf0),
                     get_port(source_addr),
                     key.id,
@@ -1758,7 +1751,7 @@ uint8_t deduplicate_packet(
     ht_e = dedup_ht_get_add(deduplication_hashtable, &key, now);
 
     DB_TRACE(LOG_DEBUG9, "len(deduplication_hashtable): %u, now: %lu",
-            HASH_COUNT(*deduplication_hashtable), tnow);
+            HASH_COUNT(*deduplication_hashtable), now);
 
     /* check whether packet identifiers exist in 'hashmap'
      *   if no, add them
@@ -1786,7 +1779,7 @@ uint8_t deduplicate_packet(
             atomic_read(&(ht_e->inner_ht[pkt_idx].value)));
 
     if (atomic_read(&(ht_e->inner_ht[pkt_idx].value)) &&
-            ((atomic_read(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen)) + timeout) >= tnow) &&
+            ((atomic_read(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen)) + timeout) >= now) &&
             pkt_id != atomic_read(&(ht_e->inner_ht[pkt_idx].value))) {
         DB_TRACE(LOG_INFO, "collision detected: packet identifier "
                 "and value do not match: id: %lu, value: %lu - overwriting",
@@ -1798,7 +1791,7 @@ uint8_t deduplicate_packet(
         drop_pkt = 0;
         DB_TRACE(LOG_DEBUG7, "found new packet. adding it");
     }
-    else if ((atomic_read(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen)) + timeout) < tnow) {
+    else if ((atomic_read(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen)) + timeout) < now) {
         drop_pkt = 0;
         DB_TRACE(LOG_DEBUG7, "found stale packet. overwriting it");
     }
@@ -1809,7 +1802,7 @@ uint8_t deduplicate_packet(
                 DB_TRACE(LOG_DEBUG4, "found duplicate. dropping packet. "
                         "now: %lu, last_seen: %lu, source: %s:%u@%u, "
                         "key: (%u, %u, %u)",
-                        tnow,
+                        now,
                         atomic_read(
                                 &(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen)),
                         get_ip(source_addr, addrbuf0),
@@ -1820,7 +1813,7 @@ uint8_t deduplicate_packet(
                         key.id);
                 );
     }
-    atomic_set(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen), tnow);
+    atomic_set(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen), now);
     atomic_set(&(ht_e->inner_ht[pkt_idx].value), pkt_id);
 
     smp_mb__after_atomic();
