@@ -283,17 +283,6 @@ struct s_hashable** cb_pre_pkt_read_load_balance(
 
 void cb_pre_pkt_read_duplicate(void);
 
-uint8_t cb_deduplicate_load_balance(
-		struct s_thread_data *td,
-		struct sockaddr_storage* source_addr,
-		struct iphdr *iph,
-		struct udphdr *udph,
-		char* data,
-		int numdatabytes,
-		uint64_t now);
-
-uint8_t cb_deduplicate_duplicate(void);
-
 t_target*  cb_pkt_process_load_balance(
 		struct s_thread_data *td,
 		struct sockaddr_storage* source_addr,

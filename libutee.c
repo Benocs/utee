@@ -709,24 +709,6 @@ struct s_hashable** cb_pre_pkt_read_load_balance(
 void cb_pre_pkt_read_duplicate(void) {
 }
 
-uint8_t cb_deduplicate_load_balance(
-        struct s_thread_data *td,
-        struct sockaddr_storage* source_addr,
-        struct iphdr *iph,
-        struct udphdr *udph,
-        char* data,
-        int numdatabytes,
-        uint64_t now) {
-    return deduplicate_packet(td, source_addr, iph, udph, data, numdatabytes,
-            now);
-}
-
-uint8_t cb_deduplicate_duplicate(void) {
-    uint8_t drop_pkt = 0;
-
-    return drop_pkt;
-}
-
 t_target*  cb_pkt_process_load_balance(
         struct s_thread_data *td,
         struct sockaddr_storage* source_addr,
@@ -938,22 +920,14 @@ uint8_t packet_post_receive(
         char* data,
         int numbytes,
         uint64_t now) {
-    uint8_t dedup_drop_pkt;
+    uint8_t drop_pkt;
 
     if (td->features.deduplicate) {
-        // callback packet deduplicate / post receive
-        switch (opcode) {
-            case OPCODE_LOAD_BALANCE:
-                dedup_drop_pkt = cb_deduplicate_load_balance(
-                        td, source_addr, iph, udph, data, numbytes, now);
-                break;
-            case OPCODE_DUPLICATE:
-                dedup_drop_pkt = cb_deduplicate_duplicate();
-                break;
-        }
+        drop_pkt = deduplicate_packet(
+                td, source_addr, iph, udph, data, numbytes, now);
 
         DB_CALL(LOG_DEBUG5,
-                if (dedup_drop_pkt) {
+                if (drop_pkt) {
                         char addrbuf0[INET6_ADDRSTRLEN];
                         DB_TRACE(LOG_DEBUG5, "listener %d: "
                                 "dropping duplicate packet from %s:%u",
@@ -963,7 +937,7 @@ uint8_t packet_post_receive(
                 }
                 );
     }
-    return dedup_drop_pkt;
+    return drop_pkt;
 }
 
 void packet_process(
