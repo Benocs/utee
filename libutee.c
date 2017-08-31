@@ -1862,7 +1862,8 @@ uint8_t deduplicate_packet(
                 char addrbuf0[INET6_ADDRSTRLEN];
                 DB_TRACE(LOG_DEBUG4, "found duplicate. dropping packet. "
                         "now: %lu, last_seen: %lu, source: %s:%u@%u, "
-                        "key: (%u, %u, %u)",
+                        "key: (%u, %u, %u), "
+                        "old_val: %lu, new_val: %lu",
                         now,
                         atomic_read(
                                 &(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen)),
@@ -1871,7 +1872,10 @@ uint8_t deduplicate_packet(
                         key.id,
                         key.addr,
                         key.port,
-                        key.id);
+                        key.id,
+                        atomic_read(&(ht_e->inner_ht[pkt_idx].value)),
+                        pkt_id
+                        );
                 );
     }
     atomic_set(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen), now);
