@@ -906,12 +906,12 @@ void *tee(void *arg0) {
     // helper variables
 
     uint16_t cnt;
+    int retval;
 
 #if defined(USE_SELECT_READ) || defined(USE_SELECT_WRITE)
     fd_set rfds;
     fd_set wfds;
     struct timeval tv;
-    int retval;
     FD_ZERO(&rfds);
     FD_ZERO(&wfds);
 #endif
@@ -1039,8 +1039,8 @@ void *tee(void *arg0) {
                             iph->tot_len);
                     );
 
-#ifdef USE_SELECT_WRITE
             do {
+#ifdef USE_SELECT_WRITE
                 do {
                     tv.tv_sec = 0;
                     tv.tv_usec = 100000;
@@ -1061,12 +1061,9 @@ void *tee(void *arg0) {
                     perror("sendto failed");
                     DB_TRACE(LOG_ERROR, "listener %d: error in write %s - %d",
                             td->thread_id, strerror(errno), errno);
-#ifdef USE_SELECT_WRITE
                     retval = -1;
-#endif
                 }
                 else {
-
                     // callback post packet send
                     switch (opcode) {
                         case OPCODE_LOAD_BALANCE:
@@ -1097,11 +1094,15 @@ void *tee(void *arg0) {
                                         get_port4_uint(udph->dest),
                                         iph->tot_len, written);
                                 );
+                        // denote error
+                        retval = -1;
+                    }
+                    else {
+                        // denote success
+                        retval = 1;
                     }
                 }
-#ifdef USE_SELECT_WRITE
             } while (retval <= 0);
-#endif
             // check whether features->duplicate == 1
             // if yes, iterate over remaining targets and
             // also send packets to them
