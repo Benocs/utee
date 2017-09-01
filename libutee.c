@@ -1403,7 +1403,8 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
     double ideal_avg = (1 / (double)tds[0].num_targets);
     double target_avg;
 
-    // NOTE: this is not overflow-safe (but only used when printing, so no bug)
+    // NOTE: this is not overflow-safe (but only used for debug printing.
+    // NOTE: for this reason this overflow is not considered a bug)
     static uint64_t global_total_cnt = 0;
 
     uint8_t threads_reading_from_master;
@@ -1990,7 +1991,7 @@ void deduplicate_maintenance(
             ht_e->dedup_ht_size = dedup_ht_size;
         }
     }
-    DB_TRACE(LOG_DEBUG2, "resetted update frequency for %lu sources "
+    DB_TRACE(LOG_DEBUG2, "reset update frequency for %lu sources "
             "(%lu tracked sources)",
             reset_cnt, src_cnt);
 
