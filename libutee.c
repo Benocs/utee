@@ -927,7 +927,7 @@ uint8_t packet_post_receive(
         char* data,
         int numbytes,
         uint64_t now) {
-    uint8_t drop_pkt;
+    uint8_t drop_pkt = 0;
 
     if (td->features.deduplicate) {
         drop_pkt = deduplicate_packet(
