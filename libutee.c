@@ -993,6 +993,9 @@ int8_t packet_send(
         struct sockaddr_in* target_addr,
         char* datagram
         ) {
+    const uint8_t max_tries = 3;
+    uint8_t try_count = 0;
+
     int32_t written;
     int8_t retval;
 
@@ -1015,7 +1018,9 @@ int8_t packet_send(
 
             if (retval == -1)
                 perror("select()");
-        } while (retval <= 0);
+        } while ((try_count++ < max_tries) && (retval <= 0));
+
+        try_count = 0;
 #endif
         if ((written = sendto(
                         target->fd,
@@ -1067,7 +1072,7 @@ int8_t packet_send(
                 retval = 1;
             }
         }
-    } while (retval <= 0);
+    } while ((try_count++ < max_tries) && (retval <= 0));
 
     return written;
 }
