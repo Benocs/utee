@@ -902,6 +902,8 @@ int packet_read(
 
     if (numbytes == -1) {
         perror("recvfrom");
+        DB_TRACE(LOG_ERROR, "listener %d: read error: %s (%d)",
+                    td->thread_id, strerror(errno), errno);
         goto ret;
     }
 
@@ -914,6 +916,8 @@ int packet_read(
     data[numbytes] = '\0';
 
 ret:
+    DB_TRACE(LOG_DEBUG9, "listener %d: received %d bytes",
+            td->thread_id, numbytes);
     return numbytes;
 }
 
