@@ -726,11 +726,11 @@ t_target*  cb_pkt_process_load_balance(
     struct s_hashable** hashtable = &(td->hashtable);
 
     struct s_features *features = &(td->features);
-    t_target *target;
+    t_target *target = &(td->targets[td->thread_id]);
 
 #if defined ENABLE_IPV6
 #else
-        struct sockaddr_in *target_addr;
+        struct sockaddr_in *target_addr = (struct sockaddr_in *)&(target->dest);
 #endif
 
     if (features->hash_based_dist || features->load_balanced_dist) {
@@ -752,20 +752,22 @@ t_target*  cb_pkt_process_load_balance(
         }
 
         target = (*ptr_ht_e)->target;
-    }
 
-    DB_CALL(LOG_DEBUG5,
-            char addrbuf0[INET6_ADDRSTRLEN];
-            if (features->hash_based_dist || features->load_balanced_dist) {
-                smp_mb__before_atomic();
-            }
-            DB_TRACE(LOG_DEBUG5, "listener %d: hash result for addr: "
-                    "target: %s:%u (count: %lu)",
-                    td->thread_id,
-                    get_ip((struct sockaddr_storage *)target_addr, addrbuf0),
-                    get_port((struct sockaddr_storage *)target_addr),
-                    atomic_read(&((*ptr_ht_e)->itemcnt)));
-            );
+        DB_CALL(LOG_DEBUG5,
+                char addrbuf0[INET6_ADDRSTRLEN];
+                if (features->hash_based_dist ||
+                        features->load_balanced_dist) {
+                    smp_mb__before_atomic();
+                }
+                DB_TRACE(LOG_DEBUG5, "listener %d: hash result for addr: "
+                        "target: %s:%u (count: %lu)",
+                        td->thread_id,
+                        get_ip((struct sockaddr_storage *)target_addr,
+                                addrbuf0),
+                        get_port((struct sockaddr_storage *)target_addr),
+                        atomic_read(&((*ptr_ht_e)->itemcnt)));
+                );
+    }
 
     update_udp_header(udph, numbytes,
             ((struct sockaddr_in*)source_addr)->sin_port,
