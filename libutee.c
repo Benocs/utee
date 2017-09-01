@@ -669,7 +669,8 @@ struct s_hashable** cb_pre_pkt_read_load_balance(
         DB_CALL(LOG_DEBUG5,
                 // print hashtable of thread 0 (they're all the same)
                 if (td->thread_id == 0 &&
-                        atomic_read(&(td->last_used_master_hashtable_idx)) == 0) {
+                        atomic_read(
+                                &(td->last_used_master_hashtable_idx)) == 0) {
                     DB_TRACE(LOG_DEBUG5, "listener %d: orig hashtable:",
                             td->thread_id);
                     DB_CALL(LOG_DEBUG5, ht_print(td->hashtable));
@@ -730,7 +731,8 @@ t_target*  cb_pkt_process_load_balance(
 
 #if defined ENABLE_IPV6
 #else
-        struct sockaddr_in *target_addr = (struct sockaddr_in *)&(target->dest);
+        struct sockaddr_in *target_addr = \
+                (struct sockaddr_in *)&(target->dest);
 #endif
 
     if (features->hash_based_dist || features->load_balanced_dist) {
@@ -1846,7 +1848,8 @@ uint8_t deduplicate_packet(
     }
 
     if (atomic_read(&(ht_e->inner_ht[pkt_idx].value)) &&
-            ((atomic_read(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen)) + timeout) >= now) &&
+            ((atomic_read(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen)) +
+                    timeout) >= now) &&
             pkt_id != atomic_read(&(ht_e->inner_ht[pkt_idx].value))) {
         DB_TRACE(LOG_WARN, "collision detected: packet identifier "
                 "and value do not match: id: %lu, value: %lu - overwriting",
@@ -1858,7 +1861,8 @@ uint8_t deduplicate_packet(
         drop_pkt = 0;
         DB_TRACE(LOG_DEBUG7, "found new packet. adding it");
     }
-    else if ((atomic_read(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen)) + timeout) < now) {
+    else if ((atomic_read(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen)) +
+            timeout) < now) {
         drop_pkt = 0;
         DB_TRACE(LOG_DEBUG7, "found stale packet. overwriting it");
     }
@@ -1936,7 +1940,8 @@ void deduplicate_maintenance(
     for(ht_e=*deduplication_hashtable; ht_e != NULL; ht_e=ht_e->hh.next) {
         src_cnt++;
 
-        if (tnow - ht_e->update_counter_timestamp_start >= deduplication_frequency_reset_interval) {
+        if (tnow - ht_e->update_counter_timestamp_start >=
+                deduplication_frequency_reset_interval) {
             reset_cnt++;
 
             DB_TRACE(LOG_DEBUG3, "key: %u, %u, %u resetting frequency "
