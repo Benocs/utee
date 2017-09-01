@@ -976,6 +976,7 @@ void packet_process(
             break;
         case OPCODE_DUPLICATE:
             *target_addr = (struct sockaddr_in*)&(td->targets[target_id].dest);
+            *target = &(td->targets[target_id]);
             cb_pkt_process_duplicate(
                     *target_addr,
                     target_id, td, source_addr,
