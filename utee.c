@@ -231,6 +231,7 @@ void parse_argv(int argc, char *argv[], t_settings* settings) {
             break;
             case 'n':
                 settings->num_threads = atoi(optarg);
+                num_threads = settings->num_threads;
                 DB_TRACE(LOG_INFO, "number of threads: %u",
                         settings->num_threads);
             break;
