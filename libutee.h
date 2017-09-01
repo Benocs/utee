@@ -366,7 +366,8 @@ int prepare_sending_socket(struct sockaddr *addr, socklen_t len, uint32_t pipe_s
 void init_sending_sockets(t_target* targets,
         uint32_t num_targets,
         char *raw_targets[],
-        uint32_t pipe_size);
+        uint32_t pipe_size,
+        uint32_t num_threads);
 
 int open_listener_socket(char* laddr, int lport, uint32_t pipe_size);
 

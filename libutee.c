@@ -1108,7 +1108,7 @@ void *tee(void *arg0) {
     setup_udp_header(udph, 0, 0, 0);
     char *data = (char *)udph + sizeof(struct udphdr);
 
-    t_target *target = &(td->targets[td->thread_id]);
+    t_target *target = &(td->targets[td->thread_id % td->num_targets]);
 #if defined ENABLE_IPV6
 #else
     struct sockaddr_in *target_addr = (struct sockaddr_in *)&(target->dest);
@@ -1157,13 +1157,15 @@ void *tee(void *arg0) {
                             "packet is %d bytes long",
                             td->thread_id, numbytes);
                     DB_TRACE(LOG_DEBUG9, "listener %d: "
-                            "sending packet: %s:%u => %s:%u: len: %u",
+                            "sending packet: %s:%u => %s:%u: len: %u "
+                            "via fd: %d",
                             td->thread_id,
                             get_ip4_uint(iph->saddr, addrbuf0),
                             get_port4_uint(udph->source),
                             get_ip4_uint(iph->daddr, addrbuf1),
                             get_port4_uint(udph->dest),
-                            iph->tot_len);
+                            iph->tot_len,
+                            target->fd);
                     );
 
             if (!(features->analyze))
@@ -1282,11 +1284,13 @@ int prepare_sending_socket(
 void init_sending_sockets(t_target* targets,
         uint32_t num_targets,
         char *raw_targets[],
-        uint32_t pipe_size) {
+        uint32_t pipe_size,
+        uint32_t num_threads) {
 
     t_target *target = NULL;
     struct sockaddr *sa;
-    uint16_t recv_idx;
+    uint32_t recv_idx;
+    uint32_t thread_idx;
     int err;
     char dest_addr[256];
     char dest_serv[256];
@@ -1294,37 +1298,41 @@ void init_sending_sockets(t_target* targets,
     char addrbuf[INET6_ADDRSTRLEN];
     uint16_t portbuf;
 
-    for (recv_idx = 0; recv_idx < num_targets; recv_idx++) {
+    for (thread_idx = 0; thread_idx < num_threads; thread_idx++) {
+        recv_idx = thread_idx % num_targets;
         target = &targets[recv_idx];
 
-        split_addr(raw_targets[recv_idx], addrbuf, &portbuf);
+        if (!(target->fd)) {
+            split_addr(raw_targets[recv_idx], addrbuf, &portbuf);
 
-        ((struct sockaddr_in*)&(target->dest))->sin_family = AF_INET;
-        ((struct sockaddr_in*)&(target->dest))->sin_addr.s_addr = inet_addr(
-                addrbuf);
-        ((struct sockaddr_in*)&(target->dest))->sin_port = htons(portbuf);
+            ((struct sockaddr_in*)&(target->dest))->sin_family = AF_INET;
+            ((struct sockaddr_in*)&(target->dest))->sin_addr.s_addr = \
+                    inet_addr(addrbuf);
+            ((struct sockaddr_in*)&(target->dest))->sin_port = htons(portbuf);
 
-        sa = (struct sockaddr *) &target->dest;
-        target->dest_len = sizeof(target->dest);
+            sa = (struct sockaddr *) &target->dest;
+            target->dest_len = sizeof(target->dest);
 
-        if (sa->sa_family != 0) {
-            if ((err = getnameinfo(sa, target->dest_len, dest_addr,
-                    sizeof(dest_addr), dest_serv, sizeof(dest_serv),
-                    NI_NUMERICHOST)) == -1) {
-                DB_TRACE(LOG_CRITICAL,"getnameinfo: %d", err);
-                exit(1);
+            if (sa->sa_family != 0) {
+                if ((err = getnameinfo(sa, target->dest_len, dest_addr,
+                        sizeof(dest_addr), dest_serv, sizeof(dest_serv),
+                        NI_NUMERICHOST)) == -1) {
+                    DB_TRACE(LOG_CRITICAL,"getnameinfo: %d", err);
+                    exit(1);
+                }
             }
+
+            target->fd = prepare_sending_socket(
+                    (struct sockaddr *)&target->dest,
+                    target->dest_len,
+                    pipe_size);
         }
 
-        target->fd = prepare_sending_socket(
-                (struct sockaddr *)&target->dest,
-                target->dest_len,
-                pipe_size);
-
-        DB_TRACE(LOG_INFO, "receiver: %s:%d :: fd: %d",
+        DB_TRACE(LOG_INFO, "receiver: %s:%d, thread id: %d, receiver id: %d, "
+                "sending fd: %d",
                 get_ip((struct sockaddr_storage *)&(target->dest), addrbuf),
                 get_port((struct sockaddr_storage *)&(target->dest)),
-                target->fd);
+                thread_idx, recv_idx, target->fd);
     }
 }
 
