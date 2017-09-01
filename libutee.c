@@ -1743,8 +1743,8 @@ void sig_handler_toggle_optional_output(int signum) {
     uint16_t cnt;
 
     optional_output_enabled = (!optional_output_enabled);
-    DB_TRACE(LOG_INFO, "toggling optional output to: %u",
-            optional_output_enabled);
+    DB_TRACE(LOG_INFO, "toggling optional output to: %u for %d threads",
+            optional_output_enabled, num_threads);
 
     for (cnt = 0; cnt < num_threads; cnt++) {
         tds[cnt].features.duplicate = optional_output_enabled;
