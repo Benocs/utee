@@ -1119,7 +1119,7 @@ void *tee(void *arg0) {
 
     // helper variables
     uint64_t local_now;
-    uint16_t cnt;
+    uint16_t target_idx;
 
     // flag to denote whether to drop a duplicate packet
     uint8_t drop_pkt = 0;
@@ -1144,9 +1144,9 @@ void *tee(void *arg0) {
         if (drop_pkt)
             continue;
 
-        for (cnt=0; cnt < td->num_targets; cnt++) {
+        for (target_idx = 0; target_idx < td->num_targets; target_idx++) {
             packet_process(td, &ht_e, opcode, &source_addr,
-                    iph, udph, numbytes, &target, cnt, &target_addr);
+                    iph, udph, numbytes, &target, target_idx, &target_addr);
 
             DB_CALL(LOG_DEBUG9,
                     char addrbuf0[INET6_ADDRSTRLEN];
@@ -1161,14 +1161,16 @@ void *tee(void *arg0) {
                             td->thread_id, numbytes);
                     DB_TRACE(LOG_DEBUG9, "listener %d: "
                             "sending packet: %s:%u => %s:%u: len: %u "
-                            "via fd: %d",
+                            "via fd: %d to target %d of %d",
                             td->thread_id,
                             get_ip4_uint(iph->saddr, addrbuf0),
                             get_port4_uint(udph->source),
                             get_ip4_uint(iph->daddr, addrbuf1),
                             get_port4_uint(udph->dest),
                             iph->tot_len,
-                            target->fd);
+                            target->fd,
+                            target_idx,
+                            td->num_targets);
                     );
 
             if (!(features->analyze))
@@ -1177,7 +1179,7 @@ void *tee(void *arg0) {
 
             // check whether features->duplicate == 1
             // if yes, iterate over remaining targets and
-            // also send packets to them
+            // also send duplications of the current packet to them
             if (!(features->duplicate))
                 break;
         }
