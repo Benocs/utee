@@ -113,6 +113,7 @@ do {                                                                          \
 typedef struct {
     struct sockaddr_storage dest;
     socklen_t dest_len;
+    // target specific sending socket
     int fd;
     // per output / target stats
     atomic_t itemcnt;
@@ -176,6 +177,7 @@ typedef struct {
 
 struct s_thread_data {
     int thread_id;
+    // shared listening socket
     int sockfd;
     t_target* targets;
     uint32_t num_targets;
