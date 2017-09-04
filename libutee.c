@@ -1009,6 +1009,7 @@ int8_t packet_send(
 #endif
 
 
+    try_count = 0;
     do {
 #ifdef USE_SELECT_WRITE
         do {
@@ -1020,9 +1021,8 @@ int8_t packet_send(
             if (retval == -1)
                 perror("select()");
         } while ((try_count++ < max_tries) && (retval <= 0));
-
-        try_count = 0;
 #endif
+
         if ((written = sendto(
                         target->fd,
                         datagram,
@@ -1030,8 +1030,10 @@ int8_t packet_send(
                         (struct sockaddr *) target_addr,
                         sizeof(*target_addr))) < 0) {
             perror("sendto failed");
-            DB_TRACE(LOG_ERROR, "listener %d: error in write %s - %d",
-                    td->thread_id, strerror(errno), errno);
+            DB_TRACE(LOG_ERROR, "listener %d: error in write %s - %d "
+                    "(try: %d/%d) retval: %d",
+                    td->thread_id, strerror(errno), errno,
+                    try_count, max_tries, retval);
             retval = -1;
         }
         else {
