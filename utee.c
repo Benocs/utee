@@ -401,7 +401,7 @@ int main(int argc, char *argv[]) {
 
     // set all targets
     init_sending_sockets(settings.targets, argc - optind, &(argv[optind]),
-            settings.pipe_size, settings.num_threads);
+            settings.pipe_size);
 
     // create and start worker threads
     threads_create(&settings, &deduplication_lock, threads);

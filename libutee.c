@@ -1289,13 +1289,11 @@ int prepare_sending_socket(
 void init_sending_sockets(t_target* targets,
         uint32_t num_targets,
         char *raw_targets[],
-        uint32_t pipe_size,
-        uint32_t num_threads) {
+        uint32_t pipe_size) {
 
     t_target *target = NULL;
     struct sockaddr *sa;
     uint32_t recv_idx;
-    uint32_t thread_idx;
     int err;
     char dest_addr[256];
     char dest_serv[256];
@@ -1303,41 +1301,37 @@ void init_sending_sockets(t_target* targets,
     char addrbuf[INET6_ADDRSTRLEN];
     uint16_t portbuf;
 
-    for (thread_idx = 0; thread_idx < num_threads; thread_idx++) {
-        recv_idx = thread_idx % num_targets;
+    for (recv_idx = 0; recv_idx < num_targets; recv_idx++) {
         target = &targets[recv_idx];
 
-        if (!(target->fd)) {
-            split_addr(raw_targets[recv_idx], addrbuf, &portbuf);
+        split_addr(raw_targets[recv_idx], addrbuf, &portbuf);
 
-            ((struct sockaddr_in*)&(target->dest))->sin_family = AF_INET;
-            ((struct sockaddr_in*)&(target->dest))->sin_addr.s_addr = \
-                    inet_addr(addrbuf);
-            ((struct sockaddr_in*)&(target->dest))->sin_port = htons(portbuf);
+        ((struct sockaddr_in*)&(target->dest))->sin_family = AF_INET;
+        ((struct sockaddr_in*)&(target->dest))->sin_addr.s_addr = \
+                inet_addr(addrbuf);
+        ((struct sockaddr_in*)&(target->dest))->sin_port = htons(portbuf);
 
-            sa = (struct sockaddr *) &target->dest;
-            target->dest_len = sizeof(target->dest);
+        sa = (struct sockaddr *) &target->dest;
+        target->dest_len = sizeof(target->dest);
 
-            if (sa->sa_family != 0) {
-                if ((err = getnameinfo(sa, target->dest_len, dest_addr,
-                        sizeof(dest_addr), dest_serv, sizeof(dest_serv),
-                        NI_NUMERICHOST)) == -1) {
-                    DB_TRACE(LOG_CRITICAL,"getnameinfo: %d", err);
-                    exit(1);
-                }
+        if (sa->sa_family != 0) {
+            if ((err = getnameinfo(sa, target->dest_len, dest_addr,
+                    sizeof(dest_addr), dest_serv, sizeof(dest_serv),
+                    NI_NUMERICHOST)) == -1) {
+                DB_TRACE(LOG_CRITICAL,"getnameinfo: %d", err);
+                exit(1);
             }
-
-            target->fd = prepare_sending_socket(
-                    (struct sockaddr *)&target->dest,
-                    target->dest_len,
-                    pipe_size);
         }
 
-        DB_TRACE(LOG_INFO, "receiver: %s:%d, thread id: %d, receiver id: %d, "
-                "sending fd: %d",
+        target->fd = prepare_sending_socket(
+                (struct sockaddr *)&target->dest,
+                target->dest_len,
+                pipe_size);
+
+        DB_TRACE(LOG_INFO, "receiver: %s:%d, receiver id: %d, sending fd: %d",
                 get_ip((struct sockaddr_storage *)&(target->dest), addrbuf),
                 get_port((struct sockaddr_storage *)&(target->dest)),
-                thread_idx, recv_idx, target->fd);
+                recv_idx, target->fd);
     }
 }
 
