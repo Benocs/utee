@@ -307,53 +307,53 @@ int setup_sockets(t_settings* settings) {
 
 void setup_thread_data(t_settings* settings, int listen_socket,
         struct s_deduplication_hashable** deduplication_hashtable) {
-    uint8_t cnt;
+    uint32_t thread_idx;
 
     bzero(tds, sizeof(tds));
     // this one loops over all threads
-    for (cnt = 0; cnt < settings->num_threads; cnt++) {
-        tds[cnt].thread_id = cnt;
-        tds[cnt].sockfd = listen_socket;
-        tds[cnt].targets = settings->targets;
-        tds[cnt].num_targets = settings->num_targets;
-        tds[cnt].hashtable = NULL;
-        tds[cnt].hashtable_ro = NULL;
-        tds[cnt].hashtable_ro_old = NULL;
-        atomic_set(&(tds[cnt].last_used_master_hashtable_idx), 0);
+    for (thread_idx = 0; thread_idx < settings->num_threads; thread_idx++) {
+        tds[thread_idx].thread_id = thread_idx;
+        tds[thread_idx].sockfd = listen_socket;
+        tds[thread_idx].targets = settings->targets;
+        tds[thread_idx].num_targets = settings->num_targets;
+        tds[thread_idx].hashtable = NULL;
+        tds[thread_idx].hashtable_ro = NULL;
+        tds[thread_idx].hashtable_ro_old = NULL;
+        atomic_set(&(tds[thread_idx].last_used_master_hashtable_idx), 0);
 
-        tds[cnt].deduplication_hashtable = deduplication_hashtable;
+        tds[thread_idx].deduplication_hashtable = deduplication_hashtable;
 
         switch (settings->mode) {
             case UTEE_MODE_DISTRIBUTE:
-                tds[cnt].features.distribute = 1;
-                tds[cnt].features.load_balanced_dist = \
+                tds[thread_idx].features.distribute = 1;
+                tds[thread_idx].features.load_balanced_dist = \
                         settings->distribute.loadbalanced_dist_enabled;
-                tds[cnt].features.hash_based_dist = \
+                tds[thread_idx].features.hash_based_dist = \
                         settings->distribute.hash_based_dist_enabled;
-                tds[cnt].features.lb_bytecnt_based = \
+                tds[thread_idx].features.lb_bytecnt_based = \
                         settings->distribute.bytecnt_based;
             break;
             case UTEE_MODE_DUPLICATE:
-                tds[cnt].features.duplicate = 1;
+                tds[thread_idx].features.duplicate = 1;
                 optional_output_enabled = 1;
             break;
         }
-        tds[cnt].features.deduplicate = settings->deduplicate.enabled;
-        tds[cnt].feature_settings.deduplication_timeout = \
+        tds[thread_idx].features.deduplicate = settings->deduplicate.enabled;
+        tds[thread_idx].feature_settings.deduplication_timeout = \
                 settings->deduplicate.timeout;
 
-        tds[cnt].deduplication_pkt_src_id_idx = \
+        tds[thread_idx].deduplication_pkt_src_id_idx = \
                 settings->deduplicate.pkt_src_id_idx;
-        tds[cnt].deduplication_pkt_id_idx = \
+        tds[thread_idx].deduplication_pkt_id_idx = \
                 settings->deduplicate.pkt_id_idx;
 
-        tds[cnt].features.analyze = settings->analyze_mode;
+        tds[thread_idx].features.analyze = settings->analyze_mode;
     }
 }
 
 void threads_create(t_settings* settings, pthread_rwlock_t* deduplication_lock,
         pthread_t* threads) {
-    uint8_t cnt;
+    uint32_t thread_idx;
 
     if (settings->deduplicate.enabled) {
         if (pthread_rwlock_init(deduplication_lock, NULL) != 0) {
@@ -363,8 +363,9 @@ void threads_create(t_settings* settings, pthread_rwlock_t* deduplication_lock,
     }
 
     // this one loops over all threads and starts them
-    for (cnt = 0; cnt < settings->num_threads; cnt++) {
-        pthread_create(&threads[cnt], NULL, &tee, (void *) &tds[cnt]);
+    for (thread_idx = 0; thread_idx < settings->num_threads; thread_idx++) {
+        pthread_create(&threads[thread_idx], NULL, &tee,
+                (void *) &tds[thread_idx]);
     }
 }
 
@@ -373,11 +374,11 @@ void utee_shutdown(
         pthread_t* threads,
         struct s_hashable** master_hashtable,
         struct s_deduplication_hashable** deduplication_hashtable) {
-    uint8_t cnt;
-    void*   thread_result;
+    uint32_t thread_idx;
+    void*    thread_result;
 
-    for (cnt = 0; cnt < settings->num_threads; cnt++) {
-        pthread_join(threads[cnt], &thread_result);
+    for (thread_idx = 0; thread_idx < settings->num_threads; thread_idx++) {
+        pthread_join(threads[thread_idx], &thread_result);
         if (thread_result)
             free(thread_result);
     }
