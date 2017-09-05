@@ -1322,8 +1322,8 @@ int prepare_sending_socket(
             getsockopt(s, SOL_SOCKET, SO_SNDBUF, &obtained, &optlen);
         }
         DB_TRACE(LOG_INFO, "sending socket: pipe_size: "
-                "obtained=%d target=%u saved=%u",
-                obtained, pipe_size, saved);
+                "before=%d, target=%u, obtained=%d",
+                saved, pipe_size, obtained);
     }
 
     DB_CALL(LOG_INFO,
@@ -1544,45 +1544,51 @@ void load_balance(struct s_thread_data* tds, uint16_t num_threads,
                         ideal_avg + (ideal_avg * (double) reorder_threshold),
                         global_total_cnt);
                 if (DEBUG_OUTPUT_BUFLEN - buf_cnt > 0)
-                    buf_cnt = snprintf(buf, DEBUG_OUTPUT_BUFLEN - buf_cnt,
+                    buf_cnt += snprintf(buf + buf_cnt,
+                            DEBUG_OUTPUT_BUFLEN - buf_cnt,
                             "relative counts:\n\t");
                 for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
                     if (DEBUG_OUTPUT_BUFLEN - buf_cnt > 0)
-                        buf_cnt = snprintf(buf, DEBUG_OUTPUT_BUFLEN - buf_cnt,
+                        buf_cnt += snprintf(buf + buf_cnt,
+                                DEBUG_OUTPUT_BUFLEN - buf_cnt,
                                 "%2u=%.4f ",
                                 cnt,
                                 per_target_item_cnt[cnt] / (double)tot_cnt);
                     if (cnt && (cnt+1) % 8 == 0 &&
                             (DEBUG_OUTPUT_BUFLEN - buf_cnt > 0))
-                        buf_cnt = snprintf(buf, DEBUG_OUTPUT_BUFLEN - buf_cnt,
+                        buf_cnt += snprintf(buf + buf_cnt,
+                                DEBUG_OUTPUT_BUFLEN - buf_cnt,
                                 "\n\t");
                 }
                 if (DEBUG_OUTPUT_BUFLEN - buf_cnt > 0)
-                    buf_cnt = snprintf(buf, DEBUG_OUTPUT_BUFLEN - buf_cnt,
+                    buf_cnt += snprintf(buf + buf_cnt,
+                            DEBUG_OUTPUT_BUFLEN - buf_cnt,
                             "\nabsolute counts:\n\t");
                 for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
                     if (DEBUG_OUTPUT_BUFLEN - buf_cnt > 0)
-                        buf_cnt = snprintf(buf, DEBUG_OUTPUT_BUFLEN - buf_cnt,
+                        buf_cnt += snprintf(buf + buf_cnt,
+                                DEBUG_OUTPUT_BUFLEN - buf_cnt,
                                 "%2u=%lu ", cnt, per_target_item_cnt[cnt]);
                     if (cnt && (cnt+1) % 8 == 0 &&
                             (DEBUG_OUTPUT_BUFLEN - buf_cnt > 0))
-                        buf_cnt = snprintf(buf, DEBUG_OUTPUT_BUFLEN - buf_cnt,
+                        buf_cnt += snprintf(buf + buf_cnt,
+                                DEBUG_OUTPUT_BUFLEN - buf_cnt,
                                 "\n\t");
                 }
                 DB_CALL(LOG_DEBUG3,
                         if (DEBUG_OUTPUT_BUFLEN - buf_cnt > 0) {
-                            buf_cnt = snprintf(buf,
+                            buf_cnt += snprintf(buf + buf_cnt,
                                     DEBUG_OUTPUT_BUFLEN - buf_cnt,
                                     "\ntarget source mapping:\n");
                         }
                         ht_print(*master_hashtable);
                         if (DEBUG_OUTPUT_BUFLEN - buf_cnt > 0) {
-                            buf_cnt = snprintf(buf,
+                            buf_cnt += snprintf(buf + buf_cnt,
                                     DEBUG_OUTPUT_BUFLEN - buf_cnt,
                                     "\n");
                         }
                         );
-                DB_TRACE(LOG_INFO, buf);
+                DB_TRACE(LOG_INFO, "%s", buf);
             }
             );
 
