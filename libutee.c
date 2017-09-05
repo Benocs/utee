@@ -1877,12 +1877,8 @@ uint8_t deduplicate_packet(
                     key.id);
             );
 
-    /* check whether source ip:port,packet identifiers is in hashmap
-     *   if no, add it.
-     *   if yes, check whether it is stale (timeout)
-     *     if yes, overwrite it
-     *     if no, set drop_pkt=1 to signal down stream that this is a potential
-     *       duplicate
+    /* check whether source ip:port,packet identifiers is in hashmap.
+     * add to hashmap if not.
      */
     ht_e = dedup_ht_get_add(deduplication_hashtable, &key, now);
 
@@ -1893,7 +1889,7 @@ uint8_t deduplicate_packet(
      *   if no, add them
      *   if yes, check whether they are stale (timeout)
      *     if yes, overwrite them and forward packet
-     *     if no, keep drop_pkt==1 and thus drop packet
+     *     if no, set drop_pkt to 1 and thus drop packet
      */
     pkt_id = get_dedup_inner_ht_packet_id(data, numdatabytes,
             td->deduplication_pkt_id_idx);
