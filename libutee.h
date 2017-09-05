@@ -69,7 +69,7 @@
  * * implement full IPv6 support
  */
 
-#define INITIAL_DEDUP_HT_SIZE 256
+#define INITIAL_DEDUP_HT_SIZE 128
 // TODO: have switch. increase either when almost full or when collision was detected
 // moving average: number of elements to consider
 #define DEDUP_UPDATE_FREQUENCY_INTERVAL_RMA_VALUES 10
