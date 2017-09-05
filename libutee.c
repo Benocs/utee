@@ -2018,15 +2018,16 @@ void deduplicate_maintenance(
 
     struct s_deduplication_hashable** deduplication_hashtable = \
             tds->deduplication_hashtable;
-    struct s_deduplication_hashable *ht_e = NULL;
-    uint32_t timeout = tds->feature_settings.deduplication_timeout;
+    //struct s_deduplication_hashable *ht_e = NULL;
+    //uint32_t timeout = tds->feature_settings.deduplication_timeout;
 
-    uint64_t last_run = 0;
+    static uint64_t last_run = 0;
     uint64_t tnow;
-    uint32_t dedup_ht_size;
+    //uint32_t dedup_ht_size;
 
-    uint64_t reset_cnt = 0;
-    uint64_t src_cnt = 0;
+    //uint64_t reset_cnt = 0;
+    //uint64_t src_cnt = 0;
+    //uint64_t resize_cnt = 0;
 
     smp_mb__before_atomic();
     tnow = atomic_read(&now);
@@ -2038,61 +2039,85 @@ void deduplicate_maintenance(
     }
     last_run = tnow;
 
-    DB_TRACE(LOG_DEBUG2, "time for maintenance");
+    //DB_TRACE(LOG_DEBUG3, "time for maintenance (last: %lu, now: %lu, "
+    //        "t_diff: %lu, interval: %u)",
+    //        last_run, tnow, tnow - last_run, deduplication_threshold);
 
-    // loop over hashmap, reset counters if necessary
-    if (pthread_rwlock_wrlock(deduplication_lock) != 0) {
-        DB_TRACE(LOG_ERROR, "cannot acquire write lock");
-        return;
-    }
-
-    DB_TRACE(LOG_DEBUG7, "have lock");
-
-    for(ht_e=*deduplication_hashtable; ht_e != NULL; ht_e=ht_e->hh.next) {
-        src_cnt++;
-
-        if (tnow - ht_e->update_counter_timestamp_start >=
-                deduplication_frequency_reset_interval) {
-            reset_cnt++;
-
-            DB_TRACE(LOG_DEBUG3, "key: %u, %u, %u resetting frequency "
-                    "counters (elapsed: %lus)",
-                    ht_e->key.addr,
-                    ht_e->key.port,
-                    ht_e->key.id,
-                    tnow - ht_e->update_counter_timestamp_start);
-
-            ht_e->update_counter_value = 1;
-            ht_e->update_counter_timestamp_start = tnow;
-        }
-
-        if (ht_e->update_frequency >
-                ((double)ht_e->dedup_ht_size / load_factor / timeout)) {
-            dedup_ht_size = (uint32_t)(
-                    ht_e->update_frequency * load_factor * timeout *
-                    resize_factor);
-
-            DB_TRACE(LOG_DEBUG3, "increasing inner ht from %u to %u due to "
-                    "update frequency %.0fHz, load_factor: %u and "
-                    "packet timeout: %us",
-                    ht_e->dedup_ht_size,
-                    dedup_ht_size,
-                    ht_e->update_frequency,
-                    load_factor,
-                    timeout);
-
-            ht_e->inner_ht = allocate_inner_ht(
-                    ht_e->dedup_ht_size,
-                    dedup_ht_size,
-                    ht_e->inner_ht);
-            ht_e->dedup_ht_size = dedup_ht_size;
-        }
-    }
-    DB_TRACE(LOG_DEBUG2, "reset update frequency for %lu sources "
-            "(%lu tracked sources)",
-            reset_cnt, src_cnt);
-
-    pthread_rwlock_unlock(deduplication_lock);
-
-    DB_TRACE(LOG_DEBUG2, "maintenance done");
+    DB_TRACE(LOG_DEBUG2,
+            "deduplication hashtable size: %u",
+            HASH_COUNT(*deduplication_hashtable));
+//    // loop over hashmap, reset counters if necessary
+//    //if (pthread_rwlock_wrlock(deduplication_lock) != 0) {
+//    //    DB_TRACE(LOG_ERROR, "cannot acquire write lock");
+//    //    return;
+//    //}
+//
+//    // TODO: even without the two problematic blocks, the read buffer already
+//    // TODO:   peaks way too close at a full size
+//    // TODO:   starting with ~2651604 sources, even the mere iteration causes
+//    // TODO:     drops
+//    if (pthread_rwlock_rdlock(deduplication_lock) != 0) {
+//        DB_TRACE(LOG_ERROR, "cannot acquire read lock");
+//        return;
+//    }
+//
+//    DB_TRACE(LOG_DEBUG7, "have lock");
+//
+//    //for(ht_e=*deduplication_hashtable; ht_e != NULL; ht_e=ht_e->hh.next) {
+//    //    src_cnt++;
+//
+//        /*
+//        // TODO: the next block causes packet drops
+//        if (tnow - ht_e->update_counter_timestamp_start >=
+//                deduplication_frequency_reset_interval) {
+//            reset_cnt++;
+//
+//            DB_TRACE(LOG_DEBUG3, "key: %u, %u, %u resetting frequency "
+//                    "counters (elapsed: %lus)",
+//                    ht_e->key.addr,
+//                    ht_e->key.port,
+//                    ht_e->key.id,
+//                    tnow - ht_e->update_counter_timestamp_start);
+//
+//            ht_e->update_counter_value = 1;
+//            ht_e->update_counter_timestamp_start = tnow;
+//        }
+//        */
+//
+//        /*
+//        // TODO: the next block causes packet drops
+//        if (ht_e->update_frequency >
+//                ((double)ht_e->dedup_ht_size / load_factor / timeout)) {
+//            resize_cnt++;
+//            dedup_ht_size = (uint32_t)(
+//                    ht_e->update_frequency * load_factor * timeout *
+//                    resize_factor);
+//
+//            DB_TRACE(LOG_DEBUG3, "increasing inner ht from %u to %u due to "
+//                    "update frequency %.0fHz, load_factor: %u and "
+//                    "packet timeout: %us",
+//                    ht_e->dedup_ht_size,
+//                    dedup_ht_size,
+//                    ht_e->update_frequency,
+//                    load_factor,
+//                    timeout);
+//
+//            ht_e->inner_ht = allocate_inner_ht(
+//                    ht_e->dedup_ht_size,
+//                    dedup_ht_size,
+//                    ht_e->inner_ht);
+//            ht_e->dedup_ht_size = dedup_ht_size;
+//        }
+//        */
+//    //}
+//    DB_TRACE(LOG_DEBUG2, "reset update frequency for %lu sources "
+//            "(%lu tracked sources)",
+//            reset_cnt, src_cnt);
+//    DB_TRACE(LOG_DEBUG2, "increased inner ht for %lu sources "
+//            "(%lu tracked sources)",
+//            resize_cnt, src_cnt);
+//
+//    pthread_rwlock_unlock(deduplication_lock);
+//
+//    DB_TRACE(LOG_DEBUG3, "maintenance done");
 }
