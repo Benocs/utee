@@ -1891,6 +1891,11 @@ uint8_t deduplicate_packet(
      *     if yes, overwrite them and forward packet
      *     if no, set drop_pkt to 1 and thus drop packet
      */
+    if (pthread_rwlock_rdlock(&(ht_e->dedup_ht_lock)) != 0) {
+        DB_TRACE(LOG_ERROR, "cannot acquire read lock");
+        drop_pkt = 0;
+        goto ret;
+    }
     pkt_id = get_dedup_inner_ht_packet_id(data, numdatabytes,
             td->deduplication_pkt_id_idx);
     hashvalue = 0;
@@ -1959,7 +1964,44 @@ uint8_t deduplicate_packet(
     }
     atomic_set(&(ht_e->inner_ht[pkt_idx].timestamp_pkt_seen), now);
     atomic_set(&(ht_e->inner_ht[pkt_idx].value), pkt_id);
+    smp_mb__after_atomic();
 
+    // TODO: fix hard-coded values for load_factor, resize_factor
+    const uint32_t load_factor = 2;
+    const uint32_t resize_factor = 2;
+    uint32_t dedup_ht_size;
+    if (ht_e->update_frequency >
+            ((double)ht_e->dedup_ht_size / load_factor / timeout)) {
+        dedup_ht_size = (uint32_t)(
+                ht_e->update_frequency * load_factor * timeout *
+                resize_factor);
+
+        DB_TRACE(LOG_DEBUG3, "increasing inner ht from %u to %u due to "
+                "update frequency %.0fHz, load_factor: %u, "
+                "packet timeout: %us and resize_factor: %u",
+                ht_e->dedup_ht_size,
+                dedup_ht_size,
+                ht_e->update_frequency,
+                load_factor,
+                timeout,
+                resize_factor);
+
+        // release read lock and acquire write lock
+        pthread_rwlock_unlock(&(ht_e->dedup_ht_lock));
+        if (pthread_rwlock_wrlock(&(ht_e->dedup_ht_lock)) != 0) {
+            DB_TRACE(LOG_ERROR, "cannot acquire write lock");
+            drop_pkt = 0;
+            goto ret;
+        }
+        ht_e->inner_ht = allocate_inner_ht(
+                ht_e->dedup_ht_size,
+                dedup_ht_size,
+                ht_e->inner_ht);
+        ht_e->dedup_ht_size = dedup_ht_size;
+    }
+
+    pthread_rwlock_unlock(&(ht_e->dedup_ht_lock));
+ret:
     smp_mb__after_atomic();
 
     return drop_pkt;
