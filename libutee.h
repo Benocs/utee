@@ -168,6 +168,7 @@ struct s_deduplication_hashable {
     t_deduplication_hashable_key key;
     t_deduplication_inner_hashable_value* inner_ht;
     uint32_t dedup_ht_size;
+    pthread_rwlock_t dedup_ht_lock;
 
     // frequency of updates of inner_ht
     double update_frequency;
