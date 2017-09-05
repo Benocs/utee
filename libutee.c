@@ -531,72 +531,107 @@ void delete_inner_ht(
     free(inner_ht);
 }
 
+struct s_deduplication_hashable* dedup_ht_create_element(
+        struct s_deduplication_hashable **ht,
+        t_deduplication_hashable_key *key,
+        uint64_t now
+        ) {
+    struct s_deduplication_hashable *ht_e = NULL;
+
+    if ((ht_e = (struct s_deduplication_hashable*)
+                malloc(sizeof(struct s_deduplication_hashable))) == NULL) {
+        perror("allocate new hashtable element");
+        DB_TRACE(LOG_ERROR, "cannot allocate new hashtable element");
+        return NULL;
+    }
+    ht_e->key.addr = key->addr;
+    ht_e->key.port = key->port;
+    ht_e->key.id = key->id;
+    atomic_set(&(ht_e->update_counter_timestamp_start), now);
+    atomic_set(&(ht_e->update_counter_value), 1);
+    if (pthread_rwlock_init(&(ht_e->dedup_ht_lock), NULL) != 0) {
+        DB_TRACE(LOG_CRITICAL, "lock init failed");
+        exit(-1);
+    }
+    ht_e->inner_ht = allocate_inner_ht(0, INITIAL_DEDUP_HT_SIZE, NULL);
+    ht_e->dedup_ht_size = INITIAL_DEDUP_HT_SIZE;
+
+    if (pthread_rwlock_wrlock(&deduplication_lock) != 0) {
+        DB_TRACE(LOG_ERROR, "cannot acquire write lock");
+        return NULL;
+    }
+    HASH_ADD(hh, *ht, key, sizeof(t_deduplication_hashable_key), ht_e);
+    pthread_rwlock_unlock(&deduplication_lock);
+
+    return ht_e;
+}
+
+void dedup_ht_update_element(
+        struct s_deduplication_hashable *ht_e,
+        uint64_t now
+        ) {
+    double freq;
+    uint64_t update_counter_timestamp_start;
+
+    smp_mb__before_atomic();
+
+    atomic_inc(&(ht_e->update_counter_value));
+
+    update_counter_timestamp_start = atomic_read(
+            &(ht_e->update_counter_timestamp_start));
+    if (now > update_counter_timestamp_start) {
+        DB_TRACE(LOG_DEBUG7, "update: key: %u, %u, %u counter: %lu, "
+                    "tdiff: %lu, frequency: %.2f",
+                    ht_e->key.addr,
+                    ht_e->key.port,
+                    ht_e->key.id,
+                    atomic_read(&(ht_e->update_counter_value)),
+                    now - update_counter_timestamp_start,
+                    ht_e->update_frequency);
+
+        freq = (double)atomic_read(&(ht_e->update_counter_value)) / \
+                (now - update_counter_timestamp_start);
+        if (! (ht_e->update_frequency)) {
+            ht_e->update_frequency = freq;
+        }
+        else {
+            EMA(ht_e->update_frequency,
+                    (double)1/DEDUP_UPDATE_FREQUENCY_INTERVAL_RMA_VALUES,
+                    ht_e->update_frequency,
+                    freq);
+        }
+
+        if (now - update_counter_timestamp_start >= 300) {
+            // TODO: replace 300 with deduplication_frequency_reset_interval) {
+            DB_TRACE(LOG_DEBUG3, "key: %u, %u, %u resetting frequency "
+                    "counters (elapsed: %lus)",
+                    ht_e->key.addr,
+                    ht_e->key.port,
+                    ht_e->key.id,
+                    now - update_counter_timestamp_start);
+
+            atomic_set(&(ht_e->update_counter_value), 1);
+            atomic_set(&(ht_e->update_counter_timestamp_start), now);
+        }
+    }
+    smp_mb__after_atomic();
+}
+
 struct s_deduplication_hashable* dedup_ht_get_add(
         struct s_deduplication_hashable **ht,
         t_deduplication_hashable_key *key,
         uint64_t now) {
     struct s_deduplication_hashable *ht_e = NULL;
-    double freq;
 
     ht_e = dedup_ht_get(ht, key);
 
     if (ht_e == NULL) {
         DB_TRACE(LOG_DEBUG7, "item not found. adding");
-        if (pthread_rwlock_wrlock(&deduplication_lock) != 0) {
-            DB_TRACE(LOG_ERROR, "cannot acquire write lock");
-            return NULL;
-        }
-
-        if ((ht_e = (struct s_deduplication_hashable*)
-                    malloc(sizeof(struct s_deduplication_hashable))) == NULL) {
-            perror("allocate new hashtable element");
-            DB_TRACE(LOG_ERROR, "cannot allocate new hashtable element");
-            return NULL;
-        }
-        memset(ht_e, 0, sizeof(struct s_deduplication_hashable));
-        ht_e->key.addr = key->addr;
-        ht_e->key.port = key->port;
-        ht_e->key.id = key->id;
-        ht_e->update_counter_timestamp_start = now;
-        ht_e->update_counter_value = 1;
-        ht_e->inner_ht = allocate_inner_ht(0, INITIAL_DEDUP_HT_SIZE, NULL);
-        ht_e->dedup_ht_size = INITIAL_DEDUP_HT_SIZE;
-
-        HASH_ADD(hh, *ht, key, sizeof(t_deduplication_hashable_key), ht_e);
-
-        pthread_rwlock_unlock(&deduplication_lock);
+        ht_e = dedup_ht_create_element(ht, key, now);
     }
     else {
         DB_TRACE(LOG_DEBUG7, "item found. updating counters");
-        if (pthread_rwlock_wrlock(&deduplication_lock) != 0) {
-            DB_TRACE(LOG_ERROR, "cannot acquire write lock");
-            return NULL;
-        }
-
-        ht_e->update_counter_value++;
-        if (now > ht_e->update_counter_timestamp_start) {
-            DB_TRACE(LOG_DEBUG7, "update: key: %u, %u, %u counter: %u, "
-                        "tdiff: %lu, frequency: %.0f",
-                        ht_e->key.addr,
-                        ht_e->key.port,
-                        ht_e->key.id,
-                        ht_e->update_counter_value,
-                        now - ht_e->update_counter_timestamp_start,
-                        ht_e->update_frequency);
-
-            freq = (double)ht_e->update_counter_value / \
-                   (now - ht_e->update_counter_timestamp_start);
-            if (! (ht_e->update_frequency)) {
-                ht_e->update_frequency = freq;
-            }
-            else {
-                EMA(ht_e->update_frequency,
-                        (double)1/DEDUP_UPDATE_FREQUENCY_INTERVAL_RMA_VALUES,
-                        ht_e->update_frequency,
-                        freq);
-            }
-        }
-        pthread_rwlock_unlock(&deduplication_lock);
+        dedup_ht_update_element(ht_e, now);
     }
 
     return ht_e;

@@ -270,6 +270,15 @@ struct s_deduplication_hashable* dedup_ht_get(
         struct s_deduplication_hashable **ht,
         t_deduplication_hashable_key *key);
 
+struct s_deduplication_hashable* dedup_ht_create_element(
+        struct s_deduplication_hashable **ht,
+        t_deduplication_hashable_key *key,
+        uint64_t now);
+
+void dedup_ht_update_element(
+        struct s_deduplication_hashable *ht_e,
+        uint64_t now);
+
 struct s_deduplication_hashable* dedup_ht_get_add(
         struct s_deduplication_hashable **ht,
         t_deduplication_hashable_key *key,
