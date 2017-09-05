@@ -172,8 +172,8 @@ struct s_deduplication_hashable {
 
     // frequency of updates of inner_ht
     double update_frequency;
-    uint32_t update_counter_value;
-    uint64_t update_counter_timestamp_start;
+    atomic_t update_counter_value;
+    atomic_t update_counter_timestamp_start;
     // have at least n percent free
     // increase otherwise
     // increase upon collision instead of frequency..?
