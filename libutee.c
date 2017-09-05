@@ -1974,15 +1974,11 @@ uint8_t deduplicate_packet(
     atomic_set(&(ht_e->inner_ht[pkt_idx].value), pkt_id);
     smp_mb__after_atomic();
 
-    // TODO: fix hard-coded values for load_factor, resize_factor
-    const uint32_t load_factor = 2;
-    const uint32_t resize_factor = 2;
-    uint32_t dedup_ht_size;
     if (ht_e->update_frequency >
-            ((double)ht_e->dedup_ht_size / load_factor / timeout)) {
+            ((double)ht_e->dedup_ht_size / dedup_ht_load_factor / timeout)) {
         dedup_ht_size = (uint32_t)(
-                ht_e->update_frequency * load_factor * timeout *
-                resize_factor);
+                ht_e->update_frequency * dedup_ht_load_factor * timeout *
+                dedup_ht_resize_factor);
 
         DB_TRACE(LOG_DEBUG3, "increasing inner ht from %u to %u due to "
                 "update frequency %.0fHz, load_factor: %u, "
@@ -1990,9 +1986,9 @@ uint8_t deduplicate_packet(
                 ht_e->dedup_ht_size,
                 dedup_ht_size,
                 ht_e->update_frequency,
-                load_factor,
+                dedup_ht_load_factor,
                 timeout,
-                resize_factor);
+                dedup_ht_resize_factor);
 
         // release read lock and acquire write lock
         pthread_rwlock_unlock(&(ht_e->dedup_ht_lock));
