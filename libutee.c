@@ -639,6 +639,7 @@ struct s_deduplication_hashable* dedup_ht_get_add(
 
 void dedup_ht_delete_all(struct s_deduplication_hashable **ht) {
     struct s_deduplication_hashable *s, *tmp;
+    uint8_t have_lock;
 
     if (! (*ht == NULL)) {
         DB_TRACE(LOG_DEBUG7, "ht: %p", ht);
@@ -649,7 +650,15 @@ void dedup_ht_delete_all(struct s_deduplication_hashable **ht) {
 
         HASH_ITER(hh, *ht, s, tmp) {
             DB_TRACE(LOG_DEBUG7, "deleting ht: %p, s: %p", *ht, s);
+            have_lock = 1;
+            if (pthread_rwlock_wrlock(&((*ht)->dedup_ht_lock)) != 0) {
+                DB_TRACE(LOG_ERROR, "cannot acquire write lock");
+                have_lock = 0;
+            }
             delete_inner_ht((*ht)->inner_ht, (*ht)->dedup_ht_size);
+            if (have_lock)
+                pthread_rwlock_unlock(&((*ht)->dedup_ht_lock));
+            pthread_rwlock_destroy(&((*ht)->dedup_ht_lock));
             HASH_DEL(*ht, s);
             DB_TRACE(LOG_DEBUG7, "freeing s: %p", s);
             free(s);
