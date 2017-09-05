@@ -279,6 +279,7 @@ struct s_deduplication_hashable* dedup_ht_create_element(
         uint64_t now);
 
 void dedup_ht_update_element(
+        struct s_thread_data* td,
         struct s_deduplication_hashable *ht_e,
         uint64_t now);
 

@@ -567,6 +567,7 @@ struct s_deduplication_hashable* dedup_ht_create_element(
 }
 
 void dedup_ht_update_element(
+        struct s_thread_data* td,
         struct s_deduplication_hashable *ht_e,
         uint64_t now
         ) {
@@ -601,8 +602,8 @@ void dedup_ht_update_element(
                     freq);
         }
 
-        if (now - update_counter_timestamp_start >= 300) {
-            // TODO: replace 300 with deduplication_frequency_reset_interval) {
+        if (now - update_counter_timestamp_start >=
+                td->feature_settings.deduplication_frequency_reset_interval) {
             DB_TRACE(LOG_DEBUG3, "key: %u, %u, %u resetting frequency "
                     "counters (elapsed: %lus)",
                     ht_e->key.addr,
@@ -631,7 +632,7 @@ struct s_deduplication_hashable* dedup_ht_get_add(
     }
     else {
         DB_TRACE(LOG_DEBUG7, "item found. updating counters");
-        dedup_ht_update_element(ht_e, now);
+        dedup_ht_update_element(td, ht_e, now);
     }
 
     return ht_e;
