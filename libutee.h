@@ -375,6 +375,10 @@ int8_t packet_send(
                 struct sockaddr_in* target_addr,
                 char* datagram);
 
+void tee_shutdown(
+                struct s_thread_data* td,
+                struct s_hashable** hashtable,
+                uint8_t opcode);
 /************************ packet loop ****************************************/
 void *tee(void *arg0);
 

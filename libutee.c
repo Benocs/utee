@@ -1123,6 +1123,26 @@ int8_t packet_send(
     return written;
 }
 
+void tee_shutdown(
+        struct s_thread_data* td,
+        struct s_hashable** hashtable,
+        uint8_t opcode) {
+
+    switch (opcode) {
+        case OPCODE_LOAD_BALANCE:
+            if (hashtable != NULL)
+                cb_shutdown_load_balance(hashtable, td);
+            break;
+        case OPCODE_DUPLICATE:
+            cb_shutdown_duplicate();
+            break;
+    }
+
+    if (td->features.deduplicate) {
+        dedup_ht_delete_all(td->deduplication_hashtable);
+    }
+}
+
 /************************ packet loop ****************************************/
 
 void *tee(void *arg0) {
@@ -1230,15 +1250,7 @@ void *tee(void *arg0) {
 
     DB_TRACE(LOG_INFO, "listener %d: shutting down", td->thread_id);
     // callback shutdown
-    switch (opcode) {
-        case OPCODE_LOAD_BALANCE:
-            if (hashtable != NULL)
-                cb_shutdown_load_balance(hashtable, td);
-            break;
-        case OPCODE_DUPLICATE:
-            cb_shutdown_duplicate();
-            break;
-    }
+    tee_shutdown(td, hashtable, opcode);
     return NULL;
 }
 
