@@ -40,6 +40,15 @@
 #include "smp.h"
 #include "uthash.h"
 
+#if defined(DEBUG)
+#undef uthash_noexpand_fyi
+#define uthash_noexpand_fyi(tbl) DB_TRACE(LOG_DEBUG, \
+        "bucket expansion inhibited")
+#undef uthash_expand_fyi
+#define uthash_expand_fyi(tbl) DB_TRACE(LOG_DEBUG, \
+        "expanding to %d buckets", tbl->num_buckets)
+#endif
+
 #ifndef GIT_REVISION
   #define GIT_REVISION "<unknown>"
 #endif
