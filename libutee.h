@@ -284,6 +284,7 @@ void dedup_ht_update_element(
         uint64_t now);
 
 struct s_deduplication_hashable* dedup_ht_get_add(
+        struct s_thread_data* td,
         struct s_deduplication_hashable **ht,
         t_deduplication_hashable_key *key,
         uint64_t now);

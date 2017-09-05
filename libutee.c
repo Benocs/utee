@@ -619,6 +619,7 @@ void dedup_ht_update_element(
 }
 
 struct s_deduplication_hashable* dedup_ht_get_add(
+        struct s_thread_data* td,
         struct s_deduplication_hashable **ht,
         t_deduplication_hashable_key *key,
         uint64_t now) {
@@ -1862,6 +1863,12 @@ uint8_t deduplicate_packet(
     uint32_t pkt_idx;
     uint32_t hashvalue;
 
+    uint32_t dedup_ht_load_factor = \
+            td->feature_settings.deduplication_inner_ht_load_factor;
+    uint32_t dedup_ht_resize_factor = \
+            td->feature_settings.deduplication_inner_ht_resize_factor;
+    uint32_t dedup_ht_size;
+
     dedup_create_ht_key(&key, source_addr, data, numdatabytes,
             td->deduplication_pkt_src_id_idx);
 
@@ -1881,7 +1888,7 @@ uint8_t deduplicate_packet(
     /* check whether source ip:port,packet identifiers is in hashmap.
      * add to hashmap if not.
      */
-    ht_e = dedup_ht_get_add(deduplication_hashtable, &key, now);
+    ht_e = dedup_ht_get_add(td, deduplication_hashtable, &key, now);
 
     DB_TRACE(LOG_DEBUG9, "len(deduplication_hashtable): %u, now: %lu",
             HASH_COUNT(*deduplication_hashtable), now);
