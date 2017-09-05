@@ -240,7 +240,6 @@ struct s_hashable* ht_get_add(struct s_hashable **ht, uint64_t key,
         HASH_ADD(hh, *ht, key, sizeof(key), ht_e);
     }
     else if (overwrite) {
-        //ht_e->key = key;
         ht_e->target = target;
         smp_mb__before_atomic();
         if (sum_itemcnt) {
@@ -1800,7 +1799,6 @@ uint8_t deduplicate_packet(
     uint32_t pkt_idx;
     uint32_t hashvalue;
 
-    memset(&key, 0, sizeof(t_deduplication_hashable_key));
     dedup_create_ht_key(&key, source_addr, data, numdatabytes,
             td->deduplication_pkt_src_id_idx);
 
