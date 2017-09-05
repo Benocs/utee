@@ -373,7 +373,8 @@ void utee_shutdown(
         t_settings* settings,
         pthread_t* threads,
         struct s_hashable** master_hashtable,
-        struct s_deduplication_hashable** deduplication_hashtable) {
+        struct s_deduplication_hashable** deduplication_hashtable,
+        pthread_rwlock_t* deduplication_lock) {
     uint32_t thread_idx;
     void*    thread_result;
 
@@ -385,6 +386,13 @@ void utee_shutdown(
 
     ht_delete_all(master_hashtable);
     dedup_ht_delete_all(deduplication_hashtable);
+
+    if (settings->deduplicate.enabled) {
+        if (pthread_rwlock_destroy(deduplication_lock) != 0) {
+            DB_TRACE(LOG_CRITICAL, "lock init failed");
+            exit(-1);
+        }
+    }
 }
 
 int main(int argc, char *argv[]) {
@@ -436,6 +444,7 @@ int main(int argc, char *argv[]) {
 
     DB_TRACE(LOG_INFO, "shutting down");
     utee_shutdown(&settings, threads, &master_hashtable,
-            &deduplication_hashtable);
+            &deduplication_hashtable,
+            &deduplication_lock);
     return 0;
 }
