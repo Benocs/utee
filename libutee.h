@@ -182,7 +182,10 @@ struct s_deduplication_hashable {
 };
 
 typedef struct {
-        uint32_t deduplication_timeout;
+    uint32_t deduplication_timeout;
+    uint32_t deduplication_frequency_reset_interval;
+    uint32_t deduplication_inner_ht_load_factor;
+    uint32_t deduplication_inner_ht_resize_factor;
 } t_feature_settings;
 
 struct s_thread_data {
