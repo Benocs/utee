@@ -690,7 +690,7 @@ uint8_t dedup_create_ht_key(
     }
 
     if (numdatabytes > id_idx) {
-        key->id = ntohl(((uint32_t*)data)[id_idx]);
+        key->id = ntohl(((uint64_t*)data)[id_idx]);
     }
     else {
         key->id = 0;
@@ -1809,7 +1809,7 @@ uint64_t get_dedup_inner_ht_packet_id(
     if (id_idx >= numdatabytes) {
         return 0;
     }
-    return ntohl(((uint32_t*)data)[id_idx]);
+    return ntohl(((uint64_t*)data)[id_idx]);
 }
 
 uint8_t deduplicate_packet(
