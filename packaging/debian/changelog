@@ -1,0 +1,5 @@
+{packagename} ({packageversion}) unstable; urgency=low
+
+  * {changelog}
+
+ -- {packagemaintainer}  {packagetimestamp}

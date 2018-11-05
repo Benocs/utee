@@ -1,0 +1,19 @@
+Source: {packagename}
+Package: {packagename}
+Priority: {packagepriority}
+Maintainer: {packagemaintainer}
+Version: {packageversion}
+Homepage: {packagehomepage}
+Installed-Size: {installedsize}
+Architecture: {packagearchitecture}
+Provides: utee
+Depends: libc6 (>= 2.16)
+Section: utils
+Description: Tool to transparently (preserve the source IP) replicate
+ a UDP stream to one or more destinations. It supports to modes of
+ operation: tee and distribution.
+ gets blocked aswell.
+ .
+ In tee mode, utee duplicates incoming traffic and sends it to the
+ configured destinations. In distribution mode, utee distributes the
+ incoming traffic among the configured destinations.
