@@ -1,0 +1,17 @@
+[Unit]
+Description=utee Load Balance
+After=network-online.target
+Wants=network-online.target systemd-network-wait-online.service
+
+[Service]
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=2s
+ExecStart=/bin/utee -m r \
+ -n 2 \
+ -l 0.0.0.0:3010 \
+ 127.0.0.1:3011 \
+ 127.0.0.1:3012
+
+[Install]
+WantedBy=multi-user.target
