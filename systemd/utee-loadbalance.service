@@ -8,8 +8,6 @@ Restart=on-failure
 RestartSec=2s
 TimeoutStopSec=2s
 EnvironmentFile=/etc/default/utee-loadbalance
-#ExecStart=/bin/utee -m r -n 2 -l 0.0.0.0:3010 \
-#127.0.0.1:3011 127.0.0.1:3012
 ExecStart=/bin/utee $DAEMON_OPTS
 
 [Install]
