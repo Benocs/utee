@@ -732,150 +732,204 @@ void *demux(void *arg0) {
     return NULL;
 }
 
-void *tee(void *arg0) {
-    uint16_t cnt;
+/*
+ *
+ * tee mmsg
+ *
+ */
 
+void *tee(void *arg0) {
     struct s_thread_data *td = (struct s_thread_data *)arg0;
     struct s_features *features = &(td->features);
 
-    // incoming packets
-    int numbytes = 0;
-    struct sockaddr_storage source_addr;
-    socklen_t addr_len = sizeof(source_addr);
+/* TODO: the define VLEN needs to become a CLI parameter (batch-size) */
+/* TODO: the max VLEN is 1024 - kernel refuses to send more than that in one batch */
+#define VLEN    1024
+/* TODO: the define BUFSIZE needs to become a CLI parameter:
+ * mtu, default 1500. then bufsize will get derived from that
+ * TODO: while reading packets, status flags need to be honored (especially stuff like TRUNC)
+ */
+#define BUFSIZE 1500
+/* make this a global define - rename it to READ_TIMEOUT and make it clear that this is different from SOCK_TIMEOUT */
+#define TIMEOUT 1
 
-    // outgoing packets
-    char datagram[BUFLEN];
-    struct iphdr *iph = (struct iphdr *)datagram;
-    struct udphdr *udph = (/*u_int8_t*/void *)iph + sizeof(struct iphdr);
-    struct sockaddr_in target_addr;
+/* TODO: move to top */
+#define IPUDP_HDR_SIZE (sizeof(struct iphdr) + sizeof(struct udphdr))
+#define get_ip_hdr(dgram) ((struct iphdr *)dgram)
+#define get_udp_hdr(dgram) ((struct udphdr *)((/*u_int8_t*/void *)dgram + sizeof(struct iphdr)))
 
-    memset(datagram, 0, BUFLEN);
-    // Set appropriate fields in headers
-    setup_ip_header(iph, 0, 0, 0);
-    setup_udp_header(udph, 0, 0, 0);
-    char *data = (char *)udph + sizeof(struct udphdr);
+    /* The top level array serving as a buffer for all messages. */
+    struct mmsghdr msgs[VLEN];
 
-#if defined(LOG_ERROR) || defined(DEBUG_SOCKETS)
-    char addrbuf0[INET6_ADDRSTRLEN];
-    char addrbuf1[INET6_ADDRSTRLEN];
-#endif
+    /* first iovec is for the ip/udp header when sending,
+     * the second iovec is for the payload when receiving and sending.
+     */
+#define IOVEC_HDR 0
+#define IOVEC_PAYLOAD 1
+    struct iovec iovecs[VLEN][2];
+    char header_bufs[VLEN][IPUDP_HDR_SIZE];
+    char payload_bufs[VLEN][BUFSIZE];
+    struct sockaddr_in source_addresses[VLEN];
 
-#if defined(USE_SELECT_READ) || defined(USE_SELECT_WRITE)
-    fd_set rfds;
-    fd_set wfds;
-    struct timeval tv;
-    int retval;
-    FD_ZERO(&rfds);
-    FD_ZERO(&wfds);
-#endif
+    int recvmmsg_retval;
+    int sendmmsg_retval;
+    const uint8_t max_send_tries = 3;
+    uint8_t send_retry_count;
+
+    /* TODO: currently target_cnt is a uint32_t. this seems rather large. reduce to uint8_t. */
+    uint32_t target_cnt;
+    uint16_t mmsg_cnt;
+    struct timespec timeout;
+
+    /* pointer pointing to the message that's currently being handled */
+    struct msghdr* msg;
+
+    memset(msgs, 0, sizeof(msgs));
+    for (mmsg_cnt = 0; mmsg_cnt < VLEN; mmsg_cnt++) {
+        iovecs[mmsg_cnt][IOVEC_HDR].iov_base = header_bufs[mmsg_cnt];
+        iovecs[mmsg_cnt][IOVEC_HDR].iov_len = IPUDP_HDR_SIZE;
+
+        iovecs[mmsg_cnt][IOVEC_PAYLOAD].iov_base = payload_bufs[mmsg_cnt];
+        iovecs[mmsg_cnt][IOVEC_PAYLOAD].iov_len = BUFSIZE;
+
+        msgs[mmsg_cnt].msg_hdr.msg_iov = &(iovecs[mmsg_cnt][IOVEC_PAYLOAD]);
+        msgs[mmsg_cnt].msg_hdr.msg_iovlen = 1;
+
+        msgs[mmsg_cnt].msg_hdr.msg_name = &(source_addresses[mmsg_cnt]);
+        msgs[mmsg_cnt].msg_hdr.msg_namelen = sizeof(source_addresses[mmsg_cnt]);
+
+        /* The msg_control structs are not used. */
+        msgs[mmsg_cnt].msg_hdr.msg_controllen = 0;
+
+        /* Initialize constant fields in headers */
+        setup_ip_header(get_ip_hdr(header_bufs[mmsg_cnt]), 0, 0, 0);
+        setup_udp_header(get_udp_hdr(header_bufs[mmsg_cnt]), 0, 0, 0);
+    }
 
     while (run_flag) {
-#ifdef USE_SELECT_READ
-        tv.tv_sec = 0;
-        tv.tv_usec = 100000;
-        FD_SET(td->sockfd, &rfds);
-        retval = select((td->sockfd)+1, &rfds, NULL, NULL, &tv);
+        timeout.tv_sec = 1;
+        timeout.tv_nsec = 0;
 
-        if (retval == -1) {
-            perror("select()");
-            continue;
-        }
-        else if (!retval) {
-            continue;
-        }
-#endif
-        if ((numbytes = recvfrom(td->sockfd, data, BUFLEN-sizeof(struct iphdr)-sizeof(struct udphdr), 0,
-                (struct sockaddr *)&source_addr, &addr_len)) == -1) {
-            perror("recvfrom");
+        /* Receive up to VLEN UDP packets but abort/stop waiting for new packets
+         * if the total receive time exceeds timeout.
+         */
+        recvmmsg_retval = recvmmsg(td->sockfd, msgs, VLEN, MSG_WAITALL, &timeout);
+        if (recvmmsg_retval == -1) {
+            /* only print an error if errno is not EWOULDBLOCK.
+             * EWOULDBLOCK is silently skipped as it's part of
+             * normal operations to have times when there's no packet to read.
+             */
+            if (errno != EWOULDBLOCK) {
+                perror("recvmmsg");
+            }
             continue;
         }
 
-        if (numbytes > 1472) {
+        /* iterate over all outputs / target addresses */
+        for (target_cnt=0;
+                target_cnt < td->num_targets;
+                target_cnt++) {
+
+            /* iterate over received packets */
+            for (mmsg_cnt = 0; mmsg_cnt < recvmmsg_retval; mmsg_cnt++) {
+                if (target_cnt == 0) {
+                    msg = &(msgs[mmsg_cnt].msg_hdr);
+
+                    if (msgs[mmsg_cnt].msg_len > 1472) {
 #ifdef LOG_ERROR
-            fprintf(stderr, "%lu - listener %d: packet is %d bytes long cropping to 1472\n",
-                    time(NULL), td->thread_id, numbytes);
+                        fprintf(stderr, "%lu - ERROR: listener %d: packet is %d bytes long cropping to 1472\n",
+                                time(NULL), td->thread_id, msgs[mmsg_cnt].msg_len);
 #endif
-            numbytes = 1472;
-        }
-
-        data[numbytes] = '\0';
-
-#ifdef DEBUG_SOCKETS
-        fprintf(stderr, "%lu - listener %d: got packet from %s:%u\n",
-            time(NULL),
-            td->thread_id,
-            get_ip(&(source_addr), addrbuf0),
-            get_port(&(source_addr)));
-        fprintf(stderr, "%lu - listener %d: packet is %d bytes long\n", time(NULL), td->thread_id, numbytes);
-        fprintf(stderr, "%lu - listener %d: packet contains \"%s\"\n", time(NULL), td->thread_id, data);
-        fprintf(stderr, "%lu - listener %d: crafting new packet...\n", time(NULL), td->thread_id);
-#endif
-
-        // check whether features->duplicate == 1
-        // if yes, iterate over remaining targets and also send packets to them
-        for (cnt=0; cnt < td->num_targets; cnt++) {
-
-            target_addr = *(struct sockaddr_in*)&(td->targets[cnt].dest);
-            update_udp_header(udph, numbytes, ((struct sockaddr_in*)&source_addr)->sin_port, target_addr.sin_port);
-            update_ip_header(iph, sizeof(struct udphdr) + numbytes,
-                            ((struct sockaddr_in*)&source_addr)->sin_addr.s_addr,
-                            target_addr.sin_addr.s_addr);
-
-#ifdef DEBUG_SOCKETS
-            fprintf(stderr, "%lu - listener %d: sending packet: %s:%u => %s:%u: len: %u\n",
-                time(NULL),
-                td->thread_id,
-                get_ip4_uint(iph->saddr, addrbuf0),
-                get_port4_uint(udph->source),
-                get_ip4_uint(iph->daddr, addrbuf1),
-                get_port4_uint(udph->dest),
-                iph->tot_len);
-#endif
-
-#ifdef USE_SELECT_WRITE
-            do {
-                do {
-                    tv.tv_sec = 0;
-                    tv.tv_usec = 100000;
-                    FD_SET(td->targets[cnt].fd, &wfds);
-                    retval = select((td->targets[cnt].fd)+1, NULL, &wfds, NULL, &tv);
-
-                    if (retval == -1)
-                        perror("select()");
-                } while (retval <= 0);
-#endif
-                int32_t written;
-                if ((written = sendto(td->targets[cnt].fd, datagram, iph->tot_len, 0, (struct sockaddr *) &target_addr, sizeof(target_addr))) < 0) {
-                    perror("sendto failed");
-                    fprintf(stderr, "%lu - listener %d: error in write %s - %d\n",
-                            time(NULL), td->thread_id, strerror(errno), errno);
-#ifdef USE_SELECT_WRITE
-                    retval = -1;
-#endif
-                }
-                else {
-                    if ( written != iph->tot_len) {
-                        // handle this short write - log and move on
-#ifdef LOG_ERROR
-                        fprintf(stderr, "%lu - ERROR: listener %d: short write: sent packet: %s:%u => %s:%u: len: %u written: %d\n",
-                            time(NULL),
-                            td->thread_id,
-                            get_ip4_uint(iph->saddr, addrbuf0),
-                            get_port4_uint(udph->source),
-                            get_ip4_uint(iph->daddr, addrbuf1),
-                            get_port4_uint(udph->dest),
-                            iph->tot_len, written);
-#endif
+                        msgs[mmsg_cnt].msg_len = 1472;
                     }
-                }
-#ifdef USE_SELECT_WRITE
-            } while (retval <= 0);
-#endif
+                    payload_bufs[mmsg_cnt][msgs[mmsg_cnt].msg_len] = 0;
 
+                    /* update iov_len with msg_len.
+                    * This will be used by the kernel as length of the payload
+                    * when sending the packet to the target(s).
+                    */
+                    iovecs[mmsg_cnt][IOVEC_PAYLOAD].iov_len = msgs[mmsg_cnt].msg_len;
+
+                    /* reset any msg_flags that have been set
+                    * while reading the packet */
+                    msg->msg_flags = 0;
+
+                    /* When receiving a packet, msg_hdr.msg_name will be filled
+                    * with the source IP address by the kernel.
+                    * When sending a packet, a raw socket is used. As the outgoing
+                    * "payload" data contains the IP and the UDP header, the
+                    * msg_hdr.msg_name field is not being used. This is communicated
+                    * to the kernel by setting the msg_hdr.msg_namelen field to 0.
+                    *
+                    * This is only done on the first iteration. In every other
+                    * iteration,since the swapping already has been done, only the
+                    * destination address is replaced.
+                    */
+                    msg->msg_namelen = 0;
+
+                    /* ... and prepend the ip/udp headers to the payload */
+                    msg->msg_iov = &(iovecs[mmsg_cnt][IOVEC_HDR]);
+                    msg->msg_iovlen = 2;
+                    msg->msg_controllen = 0;
+                }
+
+                /* set destination address and destination port for this target */
+                update_ip_header(get_ip_hdr(header_bufs[mmsg_cnt]),
+                        sizeof(struct udphdr) + iovecs[mmsg_cnt][IOVEC_PAYLOAD].iov_len,
+                        ((struct sockaddr_in)(source_addresses[mmsg_cnt])).sin_addr.s_addr,
+                        (*(struct sockaddr_in*)&(td->targets[target_cnt].dest)).sin_addr.s_addr);
+                update_udp_header(get_udp_hdr(header_bufs[mmsg_cnt]),
+                        iovecs[mmsg_cnt][IOVEC_PAYLOAD].iov_len,
+                        ((struct sockaddr_in)(source_addresses[mmsg_cnt])).sin_port,
+                        (*(struct sockaddr_in*)&(td->targets[target_cnt].dest)).sin_port);
+
+            } /* for (mmsg_cnt = 0; mmsg_cnt < recvmmsg_retval; mmsg_cnt++) */
+
+            /* hand over all packets to the kernel for sending them out.
+             *
+             * On success, sendmmsg() returns the number of messages sent
+             * from msgvec; if this is less than vlen, the caller can retry
+             * with a further sendmmsg() call to send the remaining messages.
+             *
+             * On error, -1 is returned, and errno is set to indicate the error.
+             */
+            send_retry_count = 0;
+            while (recvmmsg_retval > 0 && send_retry_count < max_send_tries) {
+                sendmmsg_retval = sendmmsg(td->targets[target_cnt].fd, msgs, recvmmsg_retval, 0);
+                if (sendmmsg_retval < 0) {
+                    // TODO: handle write error - question is how? simply abort/quit?
+                    perror("sendmmsg");
+                }
+                else if (sendmmsg_retval < recvmmsg_retval) {
+                    fprintf(stderr, "%lu - ERROR: listener %d: short write: %d/%d packets sent\n",
+                            time(NULL), td->thread_id, sendmmsg_retval, recvmmsg_retval);
+                }
+                recvmmsg_retval -= sendmmsg_retval;
+                send_retry_count += 1;
+            }
+
+            /* If packet duplicaton mode is enabled,
+             * iterate over remaining targets and also send packets to them.
+             * Otherwise, abort here.
+             *
+             * This needs to be always checked as the duplication feature
+             * can be disabled and enabled using SIGUSR1 which calls
+             * sig_handler_toggle_optional_output() and toggles this variable.
+             */
             if (!(features->duplicate))
                 break;
+        } /* for (uint32_t target_cnt=0; target_cnt < td->num_targets; target_cnt++) */
+
+        /* prepare packet buffer for next read */
+        for (mmsg_cnt = 0; mmsg_cnt < VLEN; mmsg_cnt++) {
+            iovecs[mmsg_cnt][IOVEC_PAYLOAD].iov_len = BUFSIZE;
+
+            msgs[mmsg_cnt].msg_hdr.msg_iov = &(iovecs[mmsg_cnt][IOVEC_PAYLOAD]);
+            msgs[mmsg_cnt].msg_hdr.msg_iovlen = 1;
+
+            msgs[mmsg_cnt].msg_hdr.msg_namelen = sizeof(source_addresses[mmsg_cnt]);
         }
-    }
+    } /* while (run_flag) */
 #ifdef LOG_INFO
     fprintf(stderr, "%lu - [listener-%u] shutting down\n", time(NULL), td->thread_id);
 #endif
