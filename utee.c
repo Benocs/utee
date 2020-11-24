@@ -179,16 +179,14 @@ int main(int argc, char *argv[]) {
         break;
         case 's':
             batch_size = atoi(optarg);
-#ifdef LOG_INFO
-            fprintf(stderr, "%lu - handling packets in batches of: %d\n",
-                    time(NULL), batch_size);
-#endif
         break;
         default:
             usage(argc, argv);
     }
 
 #ifdef LOG_INFO
+    fprintf(stderr, "%lu - handling packets in batches of: %d\n",
+            time(NULL), batch_size);
     if (loadbalance_bytecnt_based)
         fprintf(stderr, "%lu - use load-balancing based on byte counters\n",
                 time(NULL));
