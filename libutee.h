@@ -1,6 +1,6 @@
 /* utee - transparent udp tee proxy
  *
- * Copyright (C) 2016 Benocs
+ * Copyright (C) 2016-2020 Benocs
  * Author: Robert Wuttke <robert@benocs.com>
  *
  * This program is free software; you can redistribute it and/or
