@@ -32,9 +32,7 @@ hash_flags="-DHASH_ADDR=HASH_MOD -DHASH_FUNCTION=HASH_JEN"
 #
 # optional feature switches
 #
-#extraflags="-DRCV_ON_RAW"
-#extraflags="-DUSE_SELECT_WRITE -DRCV_ON_RAW"
-extraflags="-DUSE_SELECT_READ -DUSE_SELECT_WRITE -DRCV_ON_RAW"
+extraflags="-DUSE_SELECT_WRITE"
 
 #
 # debug flags
@@ -48,7 +46,7 @@ debugflags=
 #
 # (debug) build
 #
-gcc -g -Wall -o ${BINARY} ${SOURCE} -lpthread \
+gcc -O2 -Wall -o ${BINARY} ${SOURCE} -lpthread \
     ${extraflags} ${hash_flags} ${debugflags} ${log_flags} \
     -DGIT_REVISION=$GIT_REVISION \
     -DCOMPILE_TIME="$COMPILE_TIME" \
