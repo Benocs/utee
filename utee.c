@@ -94,7 +94,7 @@ int main(int argc, char *argv[]) {
     // 64 MB SND/RCV buffers
     uint32_t pipe_size = 67108864;
 
-    uint32_t num_targets;
+    uint8_t num_targets;
 
     int c;
 

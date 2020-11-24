@@ -57,7 +57,7 @@ volatile uint8_t optional_output_enabled = 0;
 volatile uint8_t run_flag = 1;
 
 struct s_thread_data tds[MAXTHREADS];
-uint16_t num_threads = 0;
+uint8_t num_threads = 0;
 
 atomic_t master_hashtable_idx;
 
@@ -1015,13 +1015,13 @@ int prepare_sending_socket(struct sockaddr *addr, socklen_t len, uint32_t pipe_s
 }
 
 void init_sending_sockets(struct s_target* targets,
-        uint32_t num_targets,
+        uint8_t num_targets,
         char *raw_targets[],
         uint32_t pipe_size) {
 
     struct s_target *target = NULL;
     struct sockaddr *sa;
-    uint16_t recv_idx;
+    uint8_t recv_idx;
     int err;
     char dest_addr[256];
     char dest_serv[256];
@@ -1116,14 +1116,14 @@ int open_listener_socket(char* laddr, int lport, uint32_t pipe_size) {
     return lsock;
 }
 
-void load_balance(struct s_thread_data* tds, uint16_t num_threads,
+void load_balance(struct s_thread_data* tds, uint8_t num_threads,
         uint64_t threshold, double reorder_threshold,
         struct s_hashable** master_hashtable) {
 
     struct s_hashable *s;
 
     uint16_t itcnt;
-    uint16_t cnt;
+    uint8_t cnt;
     uint8_t hit_reordering_threshold = 0;
 
     struct s_hashable* ht_e_best = NULL;

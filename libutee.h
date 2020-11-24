@@ -70,7 +70,7 @@
  */
 
 #define BUFLEN 4096
-#define MAXTHREADS 1024
+#define MAXTHREADS 255
 #define MAXOPTIMIZATIONITERATIONS 500
 
 #define HASH_MOD(key, keylen, num_bkts, hashv, bkt)                           \
@@ -142,7 +142,7 @@ struct s_thread_data {
     int thread_id;
     int sockfd;
     struct s_target* targets;
-    uint32_t num_targets;
+    uint8_t num_targets;
     struct s_features features;
     struct s_hashable* hashtable;
     struct s_hashable* hashtable_ro;
@@ -219,13 +219,13 @@ int split_addr(const char* addr, char* ip, uint16_t* port);
 int prepare_sending_socket(struct sockaddr *addr, socklen_t len, uint32_t pipe_size);
 
 void init_sending_sockets(struct s_target* targets,
-        uint32_t num_targets,
+        uint8_t num_targets,
         char *raw_targets[],
         uint32_t pipe_size);
 
 int open_listener_socket(char* laddr, int lport, uint32_t pipe_size);
 
-void load_balance(struct s_thread_data* tds, uint16_t num_threads,
+void load_balance(struct s_thread_data* tds, uint8_t num_threads,
         uint64_t threshold, double reorder_threshold,
         struct s_hashable** master_hashtable);
 
@@ -238,7 +238,7 @@ extern volatile uint8_t optional_output_enabled;
 extern volatile uint8_t run_flag;
 
 extern struct s_thread_data tds[MAXTHREADS];
-extern uint16_t num_threads;
+extern uint8_t num_threads;
 
 extern struct s_hashable* master_hashtable_ro;
 extern atomic_t master_hashtable_idx;
