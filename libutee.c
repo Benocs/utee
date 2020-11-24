@@ -27,6 +27,10 @@
  *  * http://beej.us/guide/bgnet/
  */
 
+/* vim: foldmarker={,}:foldmethod=marker */
+
+#define _GNU_SOURCE
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
