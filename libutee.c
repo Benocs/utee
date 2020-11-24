@@ -780,6 +780,11 @@ void *tee(void *arg0) {
     /* pointer pointing to the message that's currently being handled */
     struct msghdr* msg;
 
+#ifdef DEBUG_SOCKETS
+    char addrbuf0[INET6_ADDRSTRLEN];
+    char addrbuf1[INET6_ADDRSTRLEN];
+#endif
+
     memset(msgs, 0, sizeof(msgs));
     for (mmsg_cnt = 0; mmsg_cnt < td->batch_size; mmsg_cnt++) {
         iovecs[mmsg_cnt][IOVEC_HDR].iov_base = header_bufs[mmsg_cnt];
@@ -875,6 +880,17 @@ void *tee(void *arg0) {
                         iovecs[mmsg_cnt][IOVEC_PAYLOAD].iov_len,
                         ((struct sockaddr_in)(source_addresses[mmsg_cnt])).sin_port,
                         (*(struct sockaddr_in*)&(td->targets[target_cnt].dest)).sin_port);
+
+#ifdef DEBUG_SOCKETS
+                fprintf(stderr, "%lu - listener %d: sending packet: %s:%u => %s:%u: len: %u\n",
+                    time(NULL),
+                    td->thread_id,
+                    get_ip4_uint(get_ip_hdr(header_bufs[mmsg_cnt])->saddr, addrbuf0),
+                    get_port4_uint(get_udp_hdr(header_bufs[mmsg_cnt])->source),
+                    get_ip4_uint(get_ip_hdr(header_bufs[mmsg_cnt])->daddr, addrbuf1),
+                    get_port4_uint(get_udp_hdr(header_bufs[mmsg_cnt])->dest),
+                    get_ip_hdr(header_bufs[mmsg_cnt])->tot_len);
+#endif
 
             } /* for (mmsg_cnt = 0; mmsg_cnt < recvmmsg_retval; mmsg_cnt++) */
 
