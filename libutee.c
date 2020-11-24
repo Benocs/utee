@@ -1005,9 +1005,16 @@ void init_sending_sockets(struct s_target* targets,
 }
 
 int open_listener_socket(char* laddr, int lport, uint32_t pipe_size) {
+    const int on = 1;
+
     struct sockaddr_in listener_addr;
     int lsock_option = 1;
     int lsock;
+
+    /* socket receive timeout of 0.5 seconds */
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 500000;
 
     bzero(&listener_addr, sizeof(listener_addr));
     listener_addr.sin_family = AF_INET;
@@ -1032,8 +1039,16 @@ int open_listener_socket(char* laddr, int lport, uint32_t pipe_size) {
 #endif
     }
 
-    setsockopt(lsock, SOL_SOCKET, SO_REUSEADDR, (void *)&lsock_option, sizeof(lsock_option));
-
+    if (setsockopt(lsock, SOL_SOCKET, SO_RCVTIMEO, (struct timeval *)&tv, sizeof(struct timeval)) == -1) {
+        close(lsock);
+        perror("listener: setsockopt SO_RCVTIMEO");
+        return -1;
+    }
+    if (setsockopt(lsock, SOL_SOCKET, SO_REUSEADDR, (void *)&lsock_option, sizeof(lsock_option)) == -1) {
+        close(lsock);
+        perror("listener: setsockopt SO_REUSEADDR");
+        return -1;
+    }
     if (bind(lsock, (struct sockaddr *)&listener_addr, sizeof(listener_addr)) == -1) {
         close(lsock);
         perror("listener: bind");
