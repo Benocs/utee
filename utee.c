@@ -55,6 +55,7 @@
 
 void usage(int argc, char *argv[]) {
     fprintf(stderr, "usage: %s -l <listenaddr:port> -m <r|d> -n <num_threads> "
+                    "[-s <batch size>] "
                     "[-H] [-L] <targetaddr:port> [targetaddr:port [...]]\n"
                     "\tNote: num_threads must be >= number of target "
                     "addresses\n\n"
@@ -95,6 +96,7 @@ int main(int argc, char *argv[]) {
     uint32_t pipe_size = 67108864;
 
     uint8_t num_targets;
+    uint16_t batch_size = 1024;
 
     int c;
 
@@ -102,7 +104,7 @@ int main(int argc, char *argv[]) {
     smp_mb__after_atomic();
 
     opterr = 0;
-    while ((c = getopt (argc, argv, "l:m:n:i:t:LHb")) != -1)
+    while ((c = getopt (argc, argv, "l:m:n:i:s:t:LHb")) != -1)
     switch (c) {
         case 'l':
             split_addr(optarg, listenaddr, &listenport);
@@ -175,6 +177,13 @@ int main(int argc, char *argv[]) {
                     time(NULL), reorder_threshold);
 #endif
         break;
+        case 's':
+            batch_size = atoi(optarg);
+#ifdef LOG_INFO
+            fprintf(stderr, "%lu - handling packets in batches of: %d\n",
+                    time(NULL), batch_size);
+#endif
+        break;
         default:
             usage(argc, argv);
     }
@@ -213,6 +222,7 @@ int main(int argc, char *argv[]) {
         tds[cnt].sockfd = lsock;
         tds[cnt].targets = targets;
         tds[cnt].num_targets = num_targets;
+        tds[cnt].batch_size = batch_size;
         tds[cnt].hashtable = NULL;
         atomic_set(&(tds[cnt].last_used_master_hashtable_idx), 0);
 

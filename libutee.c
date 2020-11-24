@@ -52,6 +52,19 @@
 
 #include "libutee.h"
 
+/* The max BATCH_SIZE is 1024.
+ * The kernel refuses to send more than that in one batch */
+#define BATCH_SIZE_MAX    1024
+/* Maximum packet size utee can handle. Larger packets will be dropped. */
+#define PKT_BUFSIZE 1500
+/* Total allowed time in seconds to read one batch of packets */
+#define READ_BATCH_TIMEOUT 1
+
+/* Macros to help accessing header fields in a packet */
+#define IPUDP_HDR_SIZE (sizeof(struct iphdr) + sizeof(struct udphdr))
+#define get_ip_hdr(dgram) ((struct iphdr *)dgram)
+#define get_udp_hdr(dgram) ((struct udphdr *)((/*u_int8_t*/void *)dgram + sizeof(struct iphdr)))
+
 // variables that are changed when a signal arrives
 volatile uint8_t optional_output_enabled = 0;
 volatile uint8_t run_flag = 1;
@@ -742,42 +755,25 @@ void *tee(void *arg0) {
     struct s_thread_data *td = (struct s_thread_data *)arg0;
     struct s_features *features = &(td->features);
 
-/* TODO: the define VLEN needs to become a CLI parameter (batch-size) */
-/* TODO: the max VLEN is 1024 - kernel refuses to send more than that in one batch */
-#define VLEN    1024
-/* TODO: the define BUFSIZE needs to become a CLI parameter:
- * mtu, default 1500. then bufsize will get derived from that
- * TODO: while reading packets, status flags need to be honored (especially stuff like TRUNC)
- */
-#define BUFSIZE 1500
-/* make this a global define - rename it to READ_TIMEOUT and make it clear that this is different from SOCK_TIMEOUT */
-#define TIMEOUT 1
-
-/* TODO: move to top */
-#define IPUDP_HDR_SIZE (sizeof(struct iphdr) + sizeof(struct udphdr))
-#define get_ip_hdr(dgram) ((struct iphdr *)dgram)
-#define get_udp_hdr(dgram) ((struct udphdr *)((/*u_int8_t*/void *)dgram + sizeof(struct iphdr)))
-
     /* The top level array serving as a buffer for all messages. */
-    struct mmsghdr msgs[VLEN];
+    struct mmsghdr msgs[BATCH_SIZE_MAX];
 
     /* first iovec is for the ip/udp header when sending,
      * the second iovec is for the payload when receiving and sending.
      */
 #define IOVEC_HDR 0
 #define IOVEC_PAYLOAD 1
-    struct iovec iovecs[VLEN][2];
-    char header_bufs[VLEN][IPUDP_HDR_SIZE];
-    char payload_bufs[VLEN][BUFSIZE];
-    struct sockaddr_in source_addresses[VLEN];
+    struct iovec iovecs[BATCH_SIZE_MAX][2];
+    char header_bufs[BATCH_SIZE_MAX][IPUDP_HDR_SIZE];
+    char payload_bufs[BATCH_SIZE_MAX][PKT_BUFSIZE];
+    struct sockaddr_in source_addresses[BATCH_SIZE_MAX];
 
     int recvmmsg_retval;
     int sendmmsg_retval;
     const uint8_t max_send_tries = 3;
     uint8_t send_retry_count;
 
-    /* TODO: currently target_cnt is a uint32_t. this seems rather large. reduce to uint8_t. */
-    uint32_t target_cnt;
+    uint8_t target_cnt;
     uint16_t mmsg_cnt;
     struct timespec timeout;
 
@@ -785,12 +781,12 @@ void *tee(void *arg0) {
     struct msghdr* msg;
 
     memset(msgs, 0, sizeof(msgs));
-    for (mmsg_cnt = 0; mmsg_cnt < VLEN; mmsg_cnt++) {
+    for (mmsg_cnt = 0; mmsg_cnt < td->batch_size; mmsg_cnt++) {
         iovecs[mmsg_cnt][IOVEC_HDR].iov_base = header_bufs[mmsg_cnt];
         iovecs[mmsg_cnt][IOVEC_HDR].iov_len = IPUDP_HDR_SIZE;
 
         iovecs[mmsg_cnt][IOVEC_PAYLOAD].iov_base = payload_bufs[mmsg_cnt];
-        iovecs[mmsg_cnt][IOVEC_PAYLOAD].iov_len = BUFSIZE;
+        iovecs[mmsg_cnt][IOVEC_PAYLOAD].iov_len = PKT_BUFSIZE;
 
         msgs[mmsg_cnt].msg_hdr.msg_iov = &(iovecs[mmsg_cnt][IOVEC_PAYLOAD]);
         msgs[mmsg_cnt].msg_hdr.msg_iovlen = 1;
@@ -807,13 +803,13 @@ void *tee(void *arg0) {
     }
 
     while (run_flag) {
-        timeout.tv_sec = 1;
+        timeout.tv_sec = READ_BATCH_TIMEOUT;
         timeout.tv_nsec = 0;
 
-        /* Receive up to VLEN UDP packets but abort/stop waiting for new packets
+        /* Receive up to td->batch_size UDP packets but abort/stop waiting for new packets
          * if the total receive time exceeds timeout.
          */
-        recvmmsg_retval = recvmmsg(td->sockfd, msgs, VLEN, MSG_WAITALL, &timeout);
+        recvmmsg_retval = recvmmsg(td->sockfd, msgs, td->batch_size, MSG_WAITALL, &timeout);
         if (recvmmsg_retval == -1) {
             /* only print an error if errno is not EWOULDBLOCK.
              * EWOULDBLOCK is silently skipped as it's part of
@@ -826,10 +822,7 @@ void *tee(void *arg0) {
         }
 
         /* iterate over all outputs / target addresses */
-        for (target_cnt=0;
-                target_cnt < td->num_targets;
-                target_cnt++) {
-
+        for (target_cnt=0; target_cnt < td->num_targets; target_cnt++) {
             /* iterate over received packets */
             for (mmsg_cnt = 0; mmsg_cnt < recvmmsg_retval; mmsg_cnt++) {
                 if (target_cnt == 0) {
@@ -918,11 +911,11 @@ void *tee(void *arg0) {
              */
             if (!(features->duplicate))
                 break;
-        } /* for (uint32_t target_cnt=0; target_cnt < td->num_targets; target_cnt++) */
+        } /* for (target_cnt=0; target_cnt < td->num_targets; target_cnt++) */
 
         /* prepare packet buffer for next read */
-        for (mmsg_cnt = 0; mmsg_cnt < VLEN; mmsg_cnt++) {
-            iovecs[mmsg_cnt][IOVEC_PAYLOAD].iov_len = BUFSIZE;
+        for (mmsg_cnt = 0; mmsg_cnt < td->batch_size; mmsg_cnt++) {
+            iovecs[mmsg_cnt][IOVEC_PAYLOAD].iov_len = PKT_BUFSIZE;
 
             msgs[mmsg_cnt].msg_hdr.msg_iov = &(iovecs[mmsg_cnt][IOVEC_PAYLOAD]);
             msgs[mmsg_cnt].msg_hdr.msg_iovlen = 1;

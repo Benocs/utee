@@ -143,6 +143,7 @@ struct s_thread_data {
     int sockfd;
     struct s_target* targets;
     uint8_t num_targets;
+    uint16_t batch_size;
     struct s_features features;
     struct s_hashable* hashtable;
     struct s_hashable* hashtable_ro;
