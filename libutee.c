@@ -64,6 +64,8 @@
 #define IPUDP_HDR_SIZE (sizeof(struct iphdr) + sizeof(struct udphdr))
 #define get_ip_hdr(dgram) ((struct iphdr *)dgram)
 #define get_udp_hdr(dgram) ((struct udphdr *)((/*u_int8_t*/void *)dgram + sizeof(struct iphdr)))
+#define IOVEC_HDR 0
+#define IOVEC_PAYLOAD 1
 
 // variables that are changed when a signal arrives
 volatile uint8_t optional_output_enabled = 0;
@@ -761,8 +763,6 @@ void *tee(void *arg0) {
     /* first iovec is for the ip/udp header when sending,
      * the second iovec is for the payload when receiving and sending.
      */
-#define IOVEC_HDR 0
-#define IOVEC_PAYLOAD 1
     struct iovec iovecs[BATCH_SIZE_MAX][2];
     char header_bufs[BATCH_SIZE_MAX][IPUDP_HDR_SIZE];
     char payload_bufs[BATCH_SIZE_MAX][PKT_BUFSIZE];
