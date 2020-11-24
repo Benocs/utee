@@ -770,6 +770,7 @@ void *tee(void *arg0) {
 
     int recvmmsg_retval;
     int sendmmsg_retval;
+    int sendmmsg_tosend;
     const uint8_t max_send_tries = 3;
     uint8_t send_retry_count;
 
@@ -828,6 +829,8 @@ void *tee(void *arg0) {
 
         /* iterate over all outputs / target addresses */
         for (target_cnt=0; target_cnt < td->num_targets; target_cnt++) {
+            sendmmsg_tosend = recvmmsg_retval;
+
             /* iterate over received packets */
             for (mmsg_cnt = 0; mmsg_cnt < recvmmsg_retval; mmsg_cnt++) {
                 if (target_cnt == 0) {
@@ -903,17 +906,19 @@ void *tee(void *arg0) {
              * On error, -1 is returned, and errno is set to indicate the error.
              */
             send_retry_count = 0;
-            while (recvmmsg_retval > 0 && send_retry_count < max_send_tries) {
-                sendmmsg_retval = sendmmsg(td->targets[target_cnt].fd, msgs, recvmmsg_retval, 0);
+            while (sendmmsg_tosend > 0 && send_retry_count < max_send_tries) {
+                sendmmsg_retval = sendmmsg(td->targets[target_cnt].fd, msgs, sendmmsg_tosend, 0);
                 if (sendmmsg_retval < 0) {
                     // TODO: handle write error - question is how? simply abort/quit?
                     perror("sendmmsg");
                 }
-                else if (sendmmsg_retval < recvmmsg_retval) {
+#ifdef LOG_ERROR
+                else if (sendmmsg_retval < sendmmsg_tosend) {
                     fprintf(stderr, "%lu - ERROR: listener %d: short write: %d/%d packets sent\n",
-                            time(NULL), td->thread_id, sendmmsg_retval, recvmmsg_retval);
+                            time(NULL), td->thread_id, sendmmsg_retval, sendmmsg_tosend);
                 }
-                recvmmsg_retval -= sendmmsg_retval;
+#endif
+                sendmmsg_tosend -= sendmmsg_retval;
                 send_retry_count += 1;
             }
 
