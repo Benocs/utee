@@ -937,7 +937,7 @@ void *tee(void *arg0) {
 }
 
 int setsocksize(int s, int level, int optname, void *optval, socklen_t optlen) {
-    int ret;
+    int ret = -1;
     socklen_t len = sizeof(socklen_t);
     socklen_t value;
     socklen_t saved;
@@ -1063,8 +1063,6 @@ void init_sending_sockets(struct s_target* targets,
 }
 
 int open_listener_socket(char* laddr, int lport, uint32_t pipe_size) {
-    const int on = 1;
-
     struct sockaddr_in listener_addr;
     int lsock_option = 1;
     int lsock;
@@ -1132,8 +1130,8 @@ void load_balance(struct s_thread_data* tds, uint8_t num_threads,
     // this allows for the modification independent of ongoing forwarding of packets
     uint64_t per_target_item_cnt[MAXTHREADS];
 
-    uint16_t target_min_idx;
-    uint16_t target_max_idx;
+    uint16_t target_min_idx = 0;
+    uint16_t target_max_idx = 0;
 
     uint64_t tot_cnt = 0;
     uint64_t excess_items;
