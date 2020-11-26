@@ -104,7 +104,7 @@ int main(int argc, char *argv[]) {
     smp_mb__after_atomic();
 
     opterr = 0;
-    while ((c = getopt (argc, argv, "l:m:n:i:s:t:LHb")) != -1)
+    while ((c = getopt (argc, argv, "l:m:n:i:p:s:t:LHb")) != -1)
     switch (c) {
         case 'l':
             split_addr(optarg, listenaddr, &listenport);
@@ -179,6 +179,9 @@ int main(int argc, char *argv[]) {
         break;
         case 's':
             batch_size = atoi(optarg);
+        break;
+        case 'p':
+            pipe_size = atoi(optarg);
         break;
         default:
             usage(argc, argv);
