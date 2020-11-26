@@ -836,6 +836,13 @@ void *tee(void *arg0) {
                 if (target_cnt == 0) {
                     msg = &(msgs[mmsg_cnt].msg_hdr);
 
+#ifdef LOG_ERROR
+                    if (msg->msg_flags) {
+                        fprintf(stderr, "%lu - ERROR: listener %d: read error in msg: %d, flags: %d\n",
+                                time(NULL), td->thread_id, mmsg_cnt, msg->msg_flags);
+                    }
+#endif
+
                     if (msgs[mmsg_cnt].msg_len > 1472) {
 #ifdef LOG_ERROR
                         fprintf(stderr, "%lu - ERROR: listener %d: packet is %d bytes long cropping to 1472\n",
@@ -918,7 +925,20 @@ void *tee(void *arg0) {
                             time(NULL), td->thread_id, sendmmsg_retval, sendmmsg_tosend);
                 }
 #endif
-                sendmmsg_tosend -= sendmmsg_retval;
+                if (sendmmsg_retval > 0) {
+#ifdef LOG_ERROR
+                    /* check message flags for errors during sending */
+                    for (uint16_t i = 0; i < sendmmsg_retval; i++) {
+                        if (msgs[i].msg_hdr.msg_flags) {
+                            fprintf(stderr, "%lu - ERROR: listener %d: write error in msg: %d, flags: %d\n",
+                                    time(NULL), td->thread_id, i, msgs[mmsg_cnt].msg_hdr.msg_flags);
+                        }
+                    }
+#endif
+
+                    /* update packet counters */
+                    sendmmsg_tosend -= sendmmsg_retval;
+                }
                 send_retry_count += 1;
             }
 
