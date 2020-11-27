@@ -868,10 +868,6 @@ void *tee(void *arg0) {
                     * "payload" data contains the IP and the UDP header, the
                     * msg_hdr.msg_name field is not being used. This is communicated
                     * to the kernel by setting the msg_hdr.msg_namelen field to 0.
-                    *
-                    * This is only done on the first iteration. In every other
-                    * iteration,since the swapping already has been done, only the
-                    * destination address is replaced.
                     */
                     msg->msg_namelen = 0;
 
