@@ -506,6 +506,11 @@ void ht_delete_all(struct s_hashable *ht) {
     ht = NULL;
 }
 
+/*
+ *
+ * load balance mmsg
+ *
+ */
 void *load_balance(void *arg0) {
     struct s_thread_data *td = (struct s_thread_data *)arg0;
     struct s_features *features = &(td->features);
@@ -539,15 +544,6 @@ void *load_balance(void *arg0) {
 #endif
 #if defined(DEBUG) || defined(HASH_DEBUG) || defined(LOG_ERROR) || defined(DEBUG_SOCKETS)
     char addrbuf1[INET6_ADDRSTRLEN];
-#endif
-
-#if defined(USE_SELECT_READ) || defined(USE_SELECT_WRITE)
-    fd_set rfds;
-    fd_set wfds;
-    struct timeval tv;
-    int retval;
-    FD_ZERO(&rfds);
-    FD_ZERO(&wfds);
 #endif
 
     while (run_flag) {
@@ -586,20 +582,17 @@ void *load_balance(void *arg0) {
 #endif
         }
 
-#ifdef USE_SELECT_READ
-        tv.tv_sec = 0;
-        tv.tv_usec = 100000;
-        FD_SET(td->sockfd, &rfds);
-        retval = select((td->sockfd)+1, &rfds, NULL, NULL, &tv);
-
-        if (retval == -1) {
-            perror("select()");
-            continue;
-        }
-        else if (!retval) {
-            continue;
-        }
-#endif
+        /*
+         * 1) read n packets
+         * 2) loop over packets
+         *    2.1) sanitize packets (crop overly long ones)
+         *    2.2) update ip/udp headers with source, target addrs and ports
+         *    2.3) update hashtable
+         *
+         * TODO: is it possible to send a packet using a target->fd for a different target?
+         * TODO: if so, the send loop is easy
+         * TODO: if not, either keep sending one packet per syscall or copy the packets to per-target buffers in use space before calling sendmmsg()
+         */
         if ((numbytes = recvfrom(td->sockfd, data, BUFLEN-sizeof(struct iphdr)-sizeof(struct udphdr), 0,
                 (struct sockaddr *)&source_addr, &addr_len)) == -1) {
             perror("recvfrom");
@@ -675,64 +668,46 @@ void *load_balance(void *arg0) {
             iph->tot_len);
 #endif
 
-#ifdef USE_SELECT_WRITE
-        do {
-            do {
-                tv.tv_sec = 0;
-                tv.tv_usec = 100000;
-                FD_SET(target->fd, &wfds);
-                retval = select((target->fd)+1, NULL, &wfds, NULL, &tv);
+        int32_t written;
+        if ((written = sendto(target->fd, datagram, iph->tot_len, 0, (struct sockaddr *) target_addr, sizeof(*target_addr))) < 0) {
+            perror("sendto failed");
+            fprintf(stderr, "%lu - listener %d: error in write %s - %d\n", time(NULL), td->thread_id, strerror(errno), errno);
+        }
+        else {
+            if (features->load_balanced_dist) {
+                // NOTE: need atomic_inc for target-cnt as it is shared between all threads
 
-                if (retval == -1)
-                    perror("select()");
-            } while (retval <= 0);
-#endif
-            int32_t written;
-            if ((written = sendto(target->fd, datagram, iph->tot_len, 0, (struct sockaddr *) target_addr, sizeof(*target_addr))) < 0) {
-                perror("sendto failed");
-                fprintf(stderr, "%lu - listener %d: error in write %s - %d\n", time(NULL), td->thread_id, strerror(errno), errno);
-#ifdef USE_SELECT_WRITE
-                retval = -1;
-#endif
-            }
-            else {
-                if (features->load_balanced_dist) {
-                    // NOTE: need atomic_inc for target-cnt as it is shared between all threads
-
-                    smp_mb__before_atomic();
-                    if (features->lb_bytecnt_based) {
-                        // update per source bytecnt
-                        atomic_add(written, &(ht_e->itemcnt));
-                        // update per target bytetcnt
-                        atomic_add(written, &(target->itemcnt));
-                    }
-                    else {
-                        // update per source packetcnt
-                        atomic_inc(&(ht_e->itemcnt));
-                        // update per target packetcnt
-                        atomic_inc(&(target->itemcnt));
-                    }
-                    smp_mb__after_atomic();
+                smp_mb__before_atomic();
+                if (features->lb_bytecnt_based) {
+                    // update per source bytecnt
+                    atomic_add(written, &(ht_e->itemcnt));
+                    // update per target bytetcnt
+                    atomic_add(written, &(target->itemcnt));
                 }
+                else {
+                    // update per source packetcnt
+                    atomic_inc(&(ht_e->itemcnt));
+                    // update per target packetcnt
+                    atomic_inc(&(target->itemcnt));
+                }
+                smp_mb__after_atomic();
+            }
 
-                if ( written != iph->tot_len) {
-                    // handle this short write - log and move on
+	    if ( written != iph->tot_len) {
+		// handle this short write - log and move on
 #ifdef LOG_ERROR
-                    fprintf(stderr, "%lu - ERROR: listener %d: short write: sent packet: %s:%u => %s:%u: len: %u written: %d\n",
-                        time(NULL),
-                        td->thread_id,
-                        get_ip4_uint(iph->saddr, addrbuf0),
-                        get_port4_uint(udph->source),
-                        get_ip4_uint(iph->daddr, addrbuf1),
-                        get_port4_uint(udph->dest),
-                        iph->tot_len, written);
+		fprintf(stderr, "%lu - ERROR: listener %d: short write: sent packet: %s:%u => %s:%u: len: %u written: %d\n",
+		    time(NULL),
+		    td->thread_id,
+		    get_ip4_uint(iph->saddr, addrbuf0),
+		    get_port4_uint(udph->source),
+		    get_ip4_uint(iph->daddr, addrbuf1),
+		    get_port4_uint(udph->dest),
+		    iph->tot_len, written);
 #endif
-                }
-            }
-#ifdef USE_SELECT_WRITE
-        } while (retval <= 0);
-#endif
-    }
+	    }
+        }
+    } /* while (run_flag) */
 
 #ifdef LOG_INFO
     fprintf(stderr, "%lu - [listener %u] shutting down\n",
