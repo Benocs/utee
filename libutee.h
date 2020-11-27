@@ -209,7 +209,7 @@ void ht_reset_counters(struct s_hashable *ht);
 
 void ht_delete_all(struct s_hashable *ht);
 
-void *demux(void *arg0);
+void *load_balance(void *arg0);
 
 void *tee(void *arg0);
 
@@ -226,7 +226,7 @@ void init_sending_sockets(struct s_target* targets,
 
 int open_listener_socket(char* laddr, int lport, uint32_t pipe_size);
 
-void load_balance(struct s_thread_data* tds, uint8_t num_threads,
+void update_load_balance(struct s_thread_data* tds, uint8_t num_threads,
         uint64_t threshold, double reorder_threshold,
         struct s_hashable** master_hashtable);
 

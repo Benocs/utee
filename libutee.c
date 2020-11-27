@@ -506,7 +506,7 @@ void ht_delete_all(struct s_hashable *ht) {
     ht = NULL;
 }
 
-void *demux(void *arg0) {
+void *load_balance(void *arg0) {
     struct s_thread_data *td = (struct s_thread_data *)arg0;
     struct s_features *features = &(td->features);
     struct s_hashable** hashtable = &(td->hashtable);
@@ -1144,7 +1144,7 @@ int open_listener_socket(char* laddr, int lport, uint32_t pipe_size) {
     return lsock;
 }
 
-void load_balance(struct s_thread_data* tds, uint8_t num_threads,
+void update_load_balance(struct s_thread_data* tds, uint8_t num_threads,
         uint64_t threshold, double reorder_threshold,
         struct s_hashable** master_hashtable) {
 

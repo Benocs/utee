@@ -249,7 +249,7 @@ int main(int argc, char *argv[]) {
     for (cnt = 0; cnt < num_threads; cnt++) {
         switch (mode) {
             case 'r':
-                pthread_create(&thread[cnt], NULL, &demux, (void *) &tds[cnt]);
+                pthread_create(&thread[cnt], NULL, &load_balance, (void *) &tds[cnt]);
             break;
             case 'd':
                 pthread_create(&thread[cnt], NULL, &tee, (void *) &tds[cnt]);
@@ -265,7 +265,7 @@ int main(int argc, char *argv[]) {
     while (run_flag) {
 
         if (loadbalanced_dist_enabled) {
-            load_balance(tds, num_threads, threshold, reorder_threshold,
+            update_load_balance(tds, num_threads, threshold, reorder_threshold,
                     &master_hashtable);
         }
 
