@@ -517,16 +517,57 @@ void *load_balance(void *arg0) {
     struct s_hashable** hashtable = &(td->hashtable);
     struct s_hashable* ht_e;
 
+    /*
+     * mmsg variables
+     */
+    /* The top level array serving as a buffer for all messages. */
+    struct mmsghdr msgs[BATCH_SIZE_MAX];
+
+    /* first iovec is for the ip/udp header when sending,
+     * the second iovec is for the payload when receiving and sending.
+     */
+    struct iovec iovecs[BATCH_SIZE_MAX][2];
+    char header_bufs[BATCH_SIZE_MAX][IPUDP_HDR_SIZE];
+    char payload_bufs[BATCH_SIZE_MAX][PKT_BUFSIZE];
+    struct sockaddr_in source_addresses[BATCH_SIZE_MAX];
+
+    int recvmmsg_retval;
+    int sendmmsg_retval;
+    int sendmmsg_tosend;
+    const uint8_t max_send_tries = 3;
+    uint8_t send_retry_count;
+
+    uint8_t target_cnt;
+    uint16_t mmsg_cnt;
+    struct timespec timeout;
+
+    /* pointer pointing to the message that's currently being handled */
+    struct msghdr* msg;
+
+//#ifdef DEBUG_SOCKETS
+//    char addrbuf0[INET6_ADDRSTRLEN];
+//    char addrbuf1[INET6_ADDRSTRLEN];
+//#endif
+    /*
+     * end of mmsg variables
+     */
+
+    /**********************************************************/
+
+    /*
+     * legacy variables
+     */
     // incoming packets
     int numbytes = 0;
     struct sockaddr_storage source_addr;
     socklen_t addr_len = sizeof(source_addr);
 
+    /*
     // outgoing packets
-    char datagram[BUFLEN];
-    struct iphdr *iph = (struct iphdr *)datagram;
-    struct udphdr *udph = (/*u_int8_t*/void *)iph + sizeof(struct iphdr);
-    struct s_target *target = &(td->targets[td->thread_id]);
+    //char datagram[BUFLEN];
+    //struct iphdr *iph = (struct iphdr *)datagram;
+    //struct udphdr *udph = (/ *u_int8_t* /void *)iph + sizeof(struct iphdr);
+    //struct s_target *target = &(td->targets[td->thread_id]);
 
 #if defined ENABLE_IPV6
 #else
@@ -538,6 +579,7 @@ void *load_balance(void *arg0) {
     setup_ip_header(iph, 0, 0, 0);
     setup_udp_header(udph, 0, 0, 0);
     char *data = (char *)udph + sizeof(struct udphdr);
+    */
 
 #if defined(DEBUG) || defined(LOG_ERROR) || defined(DEBUG_SOCKETS)
     char addrbuf0[INET6_ADDRSTRLEN];
@@ -545,8 +587,38 @@ void *load_balance(void *arg0) {
 #if defined(DEBUG) || defined(HASH_DEBUG) || defined(LOG_ERROR) || defined(DEBUG_SOCKETS)
     char addrbuf1[INET6_ADDRSTRLEN];
 #endif
+    /*
+     * end of legacy variables
+     */
+
+    /**********************************************************/
+
+    memset(msgs, 0, sizeof(msgs));
+    for (mmsg_cnt = 0; mmsg_cnt < td->batch_size; mmsg_cnt++) {
+        iovecs[mmsg_cnt][IOVEC_HDR].iov_base = header_bufs[mmsg_cnt];
+        iovecs[mmsg_cnt][IOVEC_HDR].iov_len = IPUDP_HDR_SIZE;
+
+        iovecs[mmsg_cnt][IOVEC_PAYLOAD].iov_base = payload_bufs[mmsg_cnt];
+        iovecs[mmsg_cnt][IOVEC_PAYLOAD].iov_len = PKT_BUFSIZE;
+
+        msgs[mmsg_cnt].msg_hdr.msg_iov = &(iovecs[mmsg_cnt][IOVEC_PAYLOAD]);
+        msgs[mmsg_cnt].msg_hdr.msg_iovlen = 1;
+
+        msgs[mmsg_cnt].msg_hdr.msg_name = &(source_addresses[mmsg_cnt]);
+        msgs[mmsg_cnt].msg_hdr.msg_namelen = sizeof(source_addresses[mmsg_cnt]);
+
+        /* The msg_control structs are not used. */
+        msgs[mmsg_cnt].msg_hdr.msg_controllen = 0;
+
+        /* Initialize constant fields in headers */
+        setup_ip_header(get_ip_hdr(header_bufs[mmsg_cnt]), 0, 0, 0);
+        setup_udp_header(get_udp_hdr(header_bufs[mmsg_cnt]), 0, 0, 0);
+    }
 
     while (run_flag) {
+        /* Check for a new hash table that was created by the master thread.
+         * If there is a new one, replace the local hash table with the new.
+         */
         smp_mb__before_atomic();
         if (atomic_read(&(td->last_used_master_hashtable_idx)) != atomic_read(&master_hashtable_idx)) {
 #ifdef DEBUG_VERBOSE
@@ -593,6 +665,9 @@ void *load_balance(void *arg0) {
          * TODO: if so, the send loop is easy
          * TODO: if not, either keep sending one packet per syscall or copy the packets to per-target buffers in use space before calling sendmmsg()
          */
+        /*
+         * recv and validate packets
+         *
         if ((numbytes = recvfrom(td->sockfd, data, BUFLEN-sizeof(struct iphdr)-sizeof(struct udphdr), 0,
                 (struct sockaddr *)&source_addr, &addr_len)) == -1) {
             perror("recvfrom");
@@ -608,7 +683,11 @@ void *load_balance(void *arg0) {
         }
 
         data[numbytes] = '\0';
+        */
 
+        /*
+         * load balance packets
+         *
         if (features->hash_based_dist || features->load_balanced_dist) {
             target = (struct s_target*)hash_based_output(
                     CREATE_HT_KEY(&source_addr), td);
@@ -630,9 +709,11 @@ void *load_balance(void *arg0) {
             target = ht_e->target;
             target_addr = (struct sockaddr_in*)&(target->dest);
         }
+        */
 
+        /*
 #if defined(HASH_DEBUG)
-        if (features->hash_based_dist || features->load_balanced_dist)
+        if (features->hash_based_dist || features->load_balanced_dist) {
             smp_mb__before_atomic();
             fprintf(stderr, "%lu - listener %d: hash result for addr: target: %s:%u (count: %lu)\n",
                     time(NULL),
@@ -640,8 +721,13 @@ void *load_balance(void *arg0) {
                     get_ip((struct sockaddr_storage *)target_addr, addrbuf0),
                     get_port((struct sockaddr_storage *)target_addr),
                     atomic_read(&(ht_e->itemcnt)));
+        }
 #endif
+        */
 
+        /*
+         * update packet headers
+         *
         update_udp_header(udph, numbytes,
                 ((struct sockaddr_in*)&source_addr)->sin_port,
                 target_addr->sin_port);
@@ -667,7 +753,11 @@ void *load_balance(void *arg0) {
             get_port4_uint(udph->dest),
             iph->tot_len);
 #endif
+        */
 
+        /*
+         * send packets
+         *
         int32_t written;
         if ((written = sendto(target->fd, datagram, iph->tot_len, 0, (struct sockaddr *) target_addr, sizeof(*target_addr))) < 0) {
             perror("sendto failed");
@@ -707,6 +797,7 @@ void *load_balance(void *arg0) {
 #endif
 	    }
         }
+        */
     } /* while (run_flag) */
 
 #ifdef LOG_INFO
