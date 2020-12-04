@@ -29,43 +29,7 @@
 
 /* vim: foldmarker={,}:foldmethod=marker */
 
-#define _GNU_SOURCE
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <errno.h>
-#include <string.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netinet/ip.h>
-#include <netinet/udp.h>
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <signal.h>
-#include <pthread.h>
-#include <sys/ioctl.h>
-#include <linux/sockios.h>
-#include <sys/select.h>
-#include <time.h>
-
 #include "libutee.h"
-
-/* The max BATCH_SIZE is 1024.
- * The kernel refuses to send more than that in one batch */
-#define BATCH_SIZE_MAX    1024
-/* Maximum packet size utee can handle. Larger packets will be dropped. */
-#define PKT_BUFSIZE 1500
-/* Total allowed time in seconds to read one batch of packets */
-#define READ_BATCH_TIMEOUT 1
-
-/* Macros to help accessing header fields in a packet */
-#define IPUDP_HDR_SIZE (sizeof(struct iphdr) + sizeof(struct udphdr))
-#define get_ip_hdr(dgram) ((struct iphdr *)dgram)
-#define get_udp_hdr(dgram) ((struct udphdr *)((/*u_int8_t*/void *)dgram + sizeof(struct iphdr)))
-#define IOVEC_HDR 0
-#define IOVEC_PAYLOAD 1
 
 // variables that are changed when a signal arrives
 volatile uint8_t optional_output_enabled = 0;

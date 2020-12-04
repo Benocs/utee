@@ -30,6 +30,10 @@
 #ifndef __LIBUTEE_H_
 #define __LIBUTEE_H_
 
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -46,7 +50,6 @@
 #include <pthread.h>
 #include <sys/ioctl.h>
 #include <linux/sockios.h>
-#include <sys/select.h>
 #include <time.h>
 
 #include "smp.h"
@@ -112,6 +115,21 @@ uint64_t create_ht_key_from_addr(struct sockaddr_storage* addr);
 #ifndef CREATE_HT_KEY
 #define CREATE_HT_KEY create_ht_key_from_addr
 #endif
+
+/* The max BATCH_SIZE is 1024.
+ * The kernel refuses to send more than that in one batch */
+#define BATCH_SIZE_MAX    1024
+/* Maximum packet size utee can handle. Larger packets will be dropped. */
+#define PKT_BUFSIZE 1500
+/* Total allowed time in seconds to read one batch of packets */
+#define READ_BATCH_TIMEOUT 1
+
+/* Macros to help accessing header fields in a packet */
+#define IPUDP_HDR_SIZE (sizeof(struct iphdr) + sizeof(struct udphdr))
+#define get_ip_hdr(dgram) ((struct iphdr *)dgram)
+#define get_udp_hdr(dgram) ((struct udphdr *)((/*u_int8_t*/void *)dgram + sizeof(struct iphdr)))
+#define IOVEC_HDR 0
+#define IOVEC_PAYLOAD 1
 
 struct s_target {
     struct sockaddr_storage dest;
