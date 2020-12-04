@@ -1176,6 +1176,7 @@ void update_load_balance(struct s_thread_data* tds, uint8_t num_threads,
     uint16_t itcnt;
     uint8_t cnt;
     uint8_t hit_reordering_threshold = 0;
+    uint8_t did_reordering = 0;
 
     struct s_hashable* ht_e_best = NULL;
 
@@ -1199,7 +1200,7 @@ void update_load_balance(struct s_thread_data* tds, uint8_t num_threads,
 
     uint8_t invalidated_targets[MAXTHREADS];
 
-#if defined(DEBUG) || defined(LOG_INFO)
+#if defined(DEBUG) || defined(DEBUG_VERBOSE) || defined(LOG_INFO)
     char addrbuf0[INET6_ADDRSTRLEN];
     char addrbuf1[INET6_ADDRSTRLEN];
     char addrbuf2[INET6_ADDRSTRLEN];
@@ -1211,8 +1212,10 @@ void update_load_balance(struct s_thread_data* tds, uint8_t num_threads,
     if (num_threads == 0)
         return;
 
-    // create a copy of current counters
-    // this allows for the modification independent of ongoing forwarding of packets
+    /* Create a copy of current counters.
+     * This allows for the modification independent of ongoing forwarding
+     * of packets.
+     */
     smp_mb__before_atomic();
     for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
         per_target_item_cnt[cnt] = atomic_read(&(tds[0].targets[cnt].itemcnt));
@@ -1220,8 +1223,13 @@ void update_load_balance(struct s_thread_data* tds, uint8_t num_threads,
     }
 
     // early abort if no items were forwarded in last iteration
-    if (!tot_cnt)
+    if (!tot_cnt) {
+#if defined(DEBUG)
+        fprintf(stderr, "%lu - not load balancing: tot_cnt: 0\n",
+                time(NULL));
+#endif
         return;
+    }
 
     if (tot_cnt < threshold) {
 #if defined(DEBUG)
@@ -1231,8 +1239,19 @@ void update_load_balance(struct s_thread_data* tds, uint8_t num_threads,
         return;
     }
 
-    for (cnt = 0; cnt < num_threads; cnt++)
+    for (cnt = 0; cnt < num_threads; cnt++) {
+        /* abort if threads are still synchronizing the current hashtable */
+        if (atomic_read(&(tds[cnt].last_used_master_hashtable_idx)) != atomic_read(&master_hashtable_idx)) {
+#if defined(LOG_ERROR)
+            fprintf(stderr, "%lu - not load balancing: thread %d is still reading from current hashtable\n",
+                    time(NULL), cnt);
+#endif
+            return;
+        }
         invalidated_targets[cnt] = 0;
+    }
+    fprintf(stderr, "\n%lu ==========  load balance update started ==========\n",
+            time(NULL));
 
 #if defined(DEBUG)
     fprintf(stderr, "%lu - len(master_hashtable) before thread merging: %u\n",
@@ -1240,18 +1259,33 @@ void update_load_balance(struct s_thread_data* tds, uint8_t num_threads,
 #endif
     // merge hashmaps
     for (cnt = 0; cnt < num_threads; cnt++) {
-#if defined(DEBUG)
+#if defined(DEBUG_VERBOSE)
         fprintf(stderr, "%lu - merging thread hash maps into master. thread: %u\n",
                 time(NULL), cnt);
 #endif
 #if defined(LOG_ERROR)
-        if (tds[cnt].hashtable == *master_hashtable)
-            fprintf(stderr, "%lu - [ERR] master hash table is same as thread's %u table\n",
+        /* Test if thread's hashtable is the same as master's - as in:
+         * Same memory, same instance.
+         *
+         * If, on the other hand, both hashtables are NULL, this means
+         * that both are empty. This is not an error and thus excluded
+         * in the check.
+         *
+         * TODO: how to handle this error?
+         */
+        if (tds[cnt].hashtable == *master_hashtable
+                && *master_hashtable != NULL) {
+            fprintf(stderr, "%lu - ERROR: master hash table is same as thread's %u table\n",
                     time(NULL), cnt);
+        }
 #endif
-#if defined(DEBUG)
-        fprintf(stderr, "%lu - tds[%u].hashtable: %p - master: %p\n",
-                time(NULL), cnt, tds[cnt].hashtable, *master_hashtable);
+#if defined(DEBUG_VERBOSE)
+        fprintf(stderr, "%lu - tds[%u].hashtable: %p with %u entries - master: %p with %u entries\n",
+                time(NULL), cnt,
+                tds[cnt].hashtable,
+                HASH_COUNT(tds[cnt].hashtable),
+                *master_hashtable,
+                HASH_COUNT(*master_hashtable));
 #endif
         smp_mb__before_atomic();
         for(s=tds[cnt].hashtable; s != NULL; s=s->hh.next) {
@@ -1260,8 +1294,31 @@ void update_load_balance(struct s_thread_data* tds, uint8_t num_threads,
                 ht_get_add(master_hashtable, s->key, &(s->source), s->target,
                         atomic_read(&(s->itemcnt)), 1, 1);
             }
+#if defined(DEBUG_VERBOSE)
+            else {
+                fprintf(stderr, "%lu - skipping item from tds[%u].hashtable: count: %lu\taddr: %s:%u - target: %s:%u\n",
+                        time(NULL), cnt,
+                        atomic_read(&(s->itemcnt)),
+                        get_ip(&(s->source), addrbuf0),
+                        get_port(&(s->source)),
+                        get_ip(&(s->target->dest), addrbuf1),
+                        get_port(&(s->target->dest)));
+
+            }
+#endif
         }
     }
+
+    if (*master_hashtable == NULL) {
+#if defined(DEBUG)
+        fprintf(stderr, "%lu - master_hashtable is still empty after thread merging. aborting\n",
+                time(NULL));
+#endif
+        fprintf(stderr, "\n%lu ==========  load balance update finished ==========\n",
+                time(NULL));
+        return;
+    }
+
 
 #if defined(DEBUG)
     fprintf(stderr, "%lu - len(master_hashtable) after thread merging: %u\n",
@@ -1276,12 +1333,13 @@ void update_load_balance(struct s_thread_data* tds, uint8_t num_threads,
     // only print stats if there were any forwarded items since last optimization iteration
     if (tot_cnt) {
         fprintf(stderr, "%lu - lb cnt stats. ideal=%.4f thresh=[%.4f, %.4f] "
-                "tot=%lu\nrelative counts:\n\t",
+                "tot=%lu num_sources=%u\nrelative counts:\n\t",
                 time(NULL),
                 ideal_avg,
                 ideal_avg - (ideal_avg * (double) reorder_threshold),
                 ideal_avg + (ideal_avg * (double) reorder_threshold),
-                global_total_cnt);
+                global_total_cnt,
+                HASH_COUNT(*master_hashtable));
         for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
             fprintf(stderr, "%2u=%.4f ", cnt, per_target_item_cnt[cnt] / (double)tot_cnt);
             if (cnt && (cnt+1) % 8 == 0)
@@ -1337,7 +1395,7 @@ void update_load_balance(struct s_thread_data* tds, uint8_t num_threads,
             hit_reordering_threshold = 1;
         else
             hit_reordering_threshold = 0;
-#if defined(DEBUG)
+#if defined(DEBUG_VERBOSE)
         fprintf(stderr, "%lu - hit_reordering_threshold: %u\n",
                 time(NULL), hit_reordering_threshold);
 #endif
@@ -1375,7 +1433,7 @@ void update_load_balance(struct s_thread_data* tds, uint8_t num_threads,
             break;
 
 #if defined(LOG_INFO)
-        fprintf(stderr, "%lu - line diff: %lu - min(%u): %lu, max(%u): %lu, trying to shift up to %lu bytes\n",
+        fprintf(stderr, "%lu - item diff: %lu - min(%u): %lu, max(%u): %lu, trying to shift up to %lu items\n",
                 time(NULL),
                 excess_items,
                 target_min_idx,
@@ -1387,10 +1445,9 @@ void update_load_balance(struct s_thread_data* tds, uint8_t num_threads,
         // find hitter in biggest target which is closest to excess_items
         ht_find_best(*master_hashtable, &(tds[0].targets[target_max_idx]), excess_items, &ht_e_best);
 
-
         // cannot find any matching hashtable entry. abort
         if (ht_e_best == NULL) {
-            fprintf(stderr,  "%lu - [ERROR] no ht_e_best found. invalidating target: %u\n", time(NULL), target_max_idx);
+            fprintf(stderr,  "%lu - no ht_e_best found. excluding target %u from further optimization\n", time(NULL), target_max_idx);
             invalidated_targets[target_max_idx] = 1;
         }
         else {
@@ -1426,6 +1483,11 @@ void update_load_balance(struct s_thread_data* tds, uint8_t num_threads,
             // refresh counters
             per_target_item_cnt[target_max_idx] -= atomic_read(&(ht_e_best->itemcnt));
             per_target_item_cnt[target_min_idx] += atomic_read(&(ht_e_best->itemcnt));
+
+            /* Mark that high hitters have been shifted and
+             * that there's a new hashtable available.
+             */
+            did_reordering = 1;
         }
     } // end of for (itcnt = 0; itcnt < MAXOPTIMIZATIONITERATIONS; itcnt++) {
 
@@ -1449,30 +1511,42 @@ void update_load_balance(struct s_thread_data* tds, uint8_t num_threads,
 
     // reset all counters in next hashtable
     ht_reset_counters(*master_hashtable);
-    // delete last ro-hashtable and set next ro-hashtable
-    for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
-        ht_delete_all(tds[cnt].hashtable_ro_old);
-        ht_copy(*master_hashtable, &(tds[cnt].hashtable_ro));
+
+    /* only update master hashtable if it was changed */
+    if (did_reordering) {
+#if defined(LOG_INFO)
+        fprintf(stderr, "%lu - new hashtable:\n", time(NULL));
+        ht_iterate(*master_hashtable);
+        fprintf(stderr, "\n");
+#endif
+        // delete last ro-hashtable and set next ro-hashtable
+        for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
+            ht_delete_all(tds[cnt].hashtable_ro_old);
+            ht_copy(*master_hashtable, &(tds[cnt].hashtable_ro));
+        }
     }
     // reset all thread counters
     for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
         atomic_set(&(tds[0].targets[cnt].itemcnt), 0);
     }
-    fprintf(stderr, "\n%lu ===================================================\n",
-            time(NULL));
-
     smp_mb__after_atomic();
     ht_delete_all(*master_hashtable);
     // release master pointer to next hashtable
     *master_hashtable = NULL;
-    // increase hashtable version to signal threads that a new version is available
-    smp_mb__before_atomic();
-    atomic_inc(&master_hashtable_idx);
-    smp_mb__after_atomic();
+
+    /* only update master hashtable if it was changed */
+    if (did_reordering) {
+        // increase hashtable version to signal threads that a new version is available
+        smp_mb__before_atomic();
+        atomic_inc(&master_hashtable_idx);
+        smp_mb__after_atomic();
 #if defined(DEBUG)
-    fprintf(stderr, "%lu - len(master_hashtable) after swapping to ro: %u\n",
-            time(NULL), HASH_COUNT(*master_hashtable));
+        fprintf(stderr, "%lu - len(master_hashtable) after swapping to ro: %u\n",
+                time(NULL), HASH_COUNT(*master_hashtable));
 #endif
+    }
+    fprintf(stderr, "\n%lu ==========  load balance update finished ==========\n",
+            time(NULL));
 }
 
 void sig_handler_toggle_optional_output(int signum) {
