@@ -280,7 +280,7 @@ void ht_iterate(struct s_hashable *ht) {
 
     smp_mb__before_atomic();
     for(s=ht; s != NULL; s=s->hh.next) {
-        fprintf(stderr, "%lu - ht_iter: count: %lu\taddr: %s:%u - target: %s:%u\n",
+        fprintf(stderr, "%lu - ht_iter: hit_count: %lu\taddr: %s:%u\ttarget: %s:%u\n",
             time(NULL),
             atomic_read(&(s->itemcnt)),
             get_ip(&(s->source), addrbuf0),
