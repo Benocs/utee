@@ -563,23 +563,24 @@ int16_t read_mmsg(struct s_thread_data* td,
             msgs[mmsg_cnt].msg_len = 1472;
         }
 
-        /* update iov_len with msg_len.
-        * This will be used by the kernel as length of the payload
-        * when sending the packet to the target(s).
-        */
+        /* Update iov_len with msg_len.
+         * This will be used by the kernel as length of the payload
+         * when sending the packet to the target(s).
+         */
         iovecs[mmsg_cnt][IOVEC_PAYLOAD].iov_len = msgs[mmsg_cnt].msg_len;
 
-        /* reset any msg_flags that have been set
-        * while reading the packet */
+        /* Reset any msg_flags that have been set
+         * while reading the packet.
+         */
         msg->msg_flags = 0;
 
         /* When receiving a packet, msg_hdr.msg_name will be filled
-        * with the source IP address by the kernel.
-        * When sending a packet, a raw socket is used. As the outgoing
-        * "payload" data contains the IP and the UDP header, the
-        * msg_hdr.msg_name field is not being used. This is communicated
-        * to the kernel by setting the msg_hdr.msg_namelen field to 0.
-        */
+         * with the source IP address by the kernel.
+         * When sending a packet, a raw socket is used. As the outgoing
+         * "payload" data contains the IP and the UDP header, the
+         * msg_hdr.msg_name field is not being used. This is communicated
+         * to the kernel by setting the msg_hdr.msg_namelen field to 0.
+         */
         msg->msg_namelen = 0;
 
         /* ... and prepend the ip/udp headers to the payload */
@@ -616,7 +617,7 @@ int16_t send_mmsg(struct s_thread_data* td,
 
     int16_t total_sent = 0;
 
-    /* hand over all packets to the kernel for sending them out.
+    /* Hand over all packets to the kernel for sending them out.
      *
      * On success, sendmmsg() returns the number of messages sent
      * from msgvec; if this is less than vlen, the caller can retry
@@ -684,7 +685,7 @@ void *load_balance(void *arg0) {
     /* The top level array serving as a buffer for all messages. */
     struct mmsghdr msgs[BATCH_SIZE_MAX];
 
-    /* first iovec is for the ip/udp header when sending,
+    /* First iovec is for the ip/udp header when sending,
      * the second iovec is for the payload when receiving and sending.
      */
     struct iovec iovecs[BATCH_SIZE_MAX][2];
@@ -898,7 +899,7 @@ void *tee(void *arg0) {
     /* The top level array serving as a buffer for all messages. */
     struct mmsghdr msgs[BATCH_SIZE_MAX];
 
-    /* first iovec is for the ip/udp header when sending,
+    /* First iovec is for the ip/udp header when sending,
      * the second iovec is for the payload when receiving and sending.
      */
     struct iovec iovecs[BATCH_SIZE_MAX][2];
