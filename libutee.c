@@ -680,11 +680,7 @@ void *load_balance(void *arg0) {
     struct s_thread_data *td = (struct s_thread_data *)arg0;
     struct s_features *features = &(td->features);
     struct s_hashable** hashtable = &(td->hashtable);
-    struct s_hashable* ht_e;
 
-    /*
-     * mmsg variables
-     */
     /* The top level array serving as a buffer for all messages. */
     struct mmsghdr msgs[BATCH_SIZE_MAX];
 
@@ -698,104 +694,54 @@ void *load_balance(void *arg0) {
 
     int recvmmsg_retval;
     int sendmmsg_retval;
-    int sendmmsg_tosend;
-    const uint8_t max_send_tries = 3;
-    uint8_t send_retry_count;
 
-    uint8_t target_cnt;
     uint16_t mmsg_cnt;
-    struct timespec timeout;
 
-    /* pointer pointing to the message that's currently being handled */
-    struct msghdr* msg;
+    struct s_hashable* ht_elements[BATCH_SIZE_MAX];
+    struct s_target *targets[BATCH_SIZE_MAX];
 
-//#ifdef DEBUG_SOCKETS
-//    char addrbuf0[INET6_ADDRSTRLEN];
-//    char addrbuf1[INET6_ADDRSTRLEN];
-//#endif
-    /*
-     * end of mmsg variables
-     */
-
-    /**********************************************************/
-
-    /*
-     * legacy variables
-     */
-    // incoming packets
-    int numbytes = 0;
-    struct sockaddr_storage source_addr;
-    socklen_t addr_len = sizeof(source_addr);
-
-    /*
-    // outgoing packets
-    //char datagram[BUFLEN];
-    //struct iphdr *iph = (struct iphdr *)datagram;
-    //struct udphdr *udph = (/ *u_int8_t* /void *)iph + sizeof(struct iphdr);
-    //struct s_target *target = &(td->targets[td->thread_id]);
-
+#if defined(HASH_DEBUG)
 #if defined ENABLE_IPV6
 #else
-    struct sockaddr_in *target_addr = (struct sockaddr_in *)&(target->dest);
+    struct sockaddr_in *target_addr;
+#endif
 #endif
 
-    memset(datagram, 0, BUFLEN);
-    // Set appropriate fields in headers
-    setup_ip_header(iph, 0, 0, 0);
-    setup_udp_header(udph, 0, 0, 0);
-    char *data = (char *)udph + sizeof(struct udphdr);
-    */
-
-#if defined(DEBUG) || defined(LOG_ERROR) || defined(DEBUG_SOCKETS)
+#if defined(HASH_DEBUG) || defined(DEBUG_SOCKETS)
     char addrbuf0[INET6_ADDRSTRLEN];
-#endif
-#if defined(DEBUG) || defined(HASH_DEBUG) || defined(LOG_ERROR) || defined(DEBUG_SOCKETS)
     char addrbuf1[INET6_ADDRSTRLEN];
 #endif
-    /*
-     * end of legacy variables
-     */
 
-    /**********************************************************/
-
-    memset(msgs, 0, sizeof(msgs));
-    for (mmsg_cnt = 0; mmsg_cnt < td->batch_size; mmsg_cnt++) {
-        iovecs[mmsg_cnt][IOVEC_HDR].iov_base = header_bufs[mmsg_cnt];
-        iovecs[mmsg_cnt][IOVEC_HDR].iov_len = IPUDP_HDR_SIZE;
-
-        iovecs[mmsg_cnt][IOVEC_PAYLOAD].iov_base = payload_bufs[mmsg_cnt];
-        iovecs[mmsg_cnt][IOVEC_PAYLOAD].iov_len = PKT_BUFSIZE;
-
-        msgs[mmsg_cnt].msg_hdr.msg_iov = &(iovecs[mmsg_cnt][IOVEC_PAYLOAD]);
-        msgs[mmsg_cnt].msg_hdr.msg_iovlen = 1;
-
-        msgs[mmsg_cnt].msg_hdr.msg_name = &(source_addresses[mmsg_cnt]);
-        msgs[mmsg_cnt].msg_hdr.msg_namelen = sizeof(source_addresses[mmsg_cnt]);
-
-        /* The msg_control structs are not used. */
-        msgs[mmsg_cnt].msg_hdr.msg_controllen = 0;
-
-        /* Initialize constant fields in headers */
-        setup_ip_header(get_ip_hdr(header_bufs[mmsg_cnt]), 0, 0, 0);
-        setup_udp_header(get_udp_hdr(header_bufs[mmsg_cnt]), 0, 0, 0);
-    }
+    init_mmsg_buffers(
+            msgs,
+            iovecs,
+            header_bufs,
+            payload_bufs,
+            source_addresses,
+            td->batch_size);
 
     while (run_flag) {
         /* Check for a new hash table that was created by the master thread.
          * If there is a new one, replace the local hash table with the new.
          */
         smp_mb__before_atomic();
+#ifdef DEBUG
+        fprintf(stderr, "%lu - listener %d: hashtable current: %lu master: %lu \n",
+                time(NULL), td->thread_id,
+                atomic_read(&(td->last_used_master_hashtable_idx)),
+                atomic_read(&master_hashtable_idx));
+#endif
         if (atomic_read(&(td->last_used_master_hashtable_idx)) != atomic_read(&master_hashtable_idx)) {
 #ifdef DEBUG_VERBOSE
             // print hashtable of thread 0 (they're all the same)
-            if (td->thread_id == 0 && atomic_read(&(td->last_used_master_hashtable_idx)) == 0) {
+            if (td->thread_id == 0) {
                 fprintf(stderr, "%lu - listener %d: orig hashtable:\n",
                         time(NULL), td->thread_id);
                 ht_iterate(td->hashtable);
                 fprintf(stderr, "\n");
             }
 #endif
-#ifdef DEBUG
+#ifdef LOG_INFO
             fprintf(stderr, "%lu - listener %d: new master hash map available (%lu)\n",
                     time(NULL), td->thread_id, atomic_read(&master_hashtable_idx));
 #endif
@@ -806,9 +752,8 @@ void *load_balance(void *arg0) {
             td->hashtable_ro = NULL;
             hashtable = &(td->hashtable);
             atomic_set(&(td->last_used_master_hashtable_idx), atomic_read(&master_hashtable_idx));
-            smp_mb__after_atomic();
 
-#ifdef DEBUG_VERBOSE
+#ifdef LOG_DEBUG
             // print hashtable of thread 0 (they're all the same)
             if (td->thread_id == 0) {
                 fprintf(stderr, "%lu - listener %d: new hashtable:\n",
@@ -818,151 +763,113 @@ void *load_balance(void *arg0) {
             }
 #endif
         }
+        smp_mb__after_atomic();
 
-        /*
-         * 1) read n packets
-         * 2) loop over packets
-         *    2.1) sanitize packets (crop overly long ones)
-         *    2.2) update ip/udp headers with source, target addrs and ports
-         *    2.3) update hashtable
-         *
-         * TODO: is it possible to send a packet using a target->fd for a different target?
-         * TODO: if so, the send loop is easy
-         * TODO: if not, either keep sending one packet per syscall or copy the packets to per-target buffers in use space before calling sendmmsg()
-         */
-        /*
-         * recv and validate packets
-         *
-        if ((numbytes = recvfrom(td->sockfd, data, BUFLEN-sizeof(struct iphdr)-sizeof(struct udphdr), 0,
-                (struct sockaddr *)&source_addr, &addr_len)) == -1) {
-            perror("recvfrom");
+        recvmmsg_retval = read_mmsg(td,
+            msgs,
+            iovecs,
+            source_addresses);
+        if (recvmmsg_retval == -1) {
             continue;
         }
 
-        if (numbytes > 1472) {
-#ifdef LOG_ERROR
-            fprintf(stderr, "%lu - ERROR: listener %d: packet is %d bytes long cropping to 1472\n",
-                    time(NULL), td->thread_id, numbytes);
-#endif
-            numbytes = 1472;
-        }
-
-        data[numbytes] = '\0';
-        */
-
-        /*
-         * load balance packets
-         *
-        if (features->hash_based_dist || features->load_balanced_dist) {
-            target = (struct s_target*)hash_based_output(
-                    CREATE_HT_KEY(&source_addr), td);
-            target_addr = (struct sockaddr_in*)&(target->dest);
-        }
-
-        if (features->load_balanced_dist) {
-            ht_e = (struct s_hashable*) ht_get_add(hashtable,
-                    CREATE_HT_KEY(&source_addr),
-                    &source_addr,
-                    target, 0, 0, 0);
-
-            if (ht_e == NULL) {
-                fprintf(stderr, "%lu - ERROR: listener %d: Error while adding element to hashtable\n",
-                        time(NULL), td->thread_id);
-                exit(1);
+        /* iterate over received packets */
+        for (mmsg_cnt = 0; mmsg_cnt < recvmmsg_retval; mmsg_cnt++) {
+            /*
+             * load balance packets
+             */
+            // struct sockaddr_storage source_addr;
+            if (features->hash_based_dist || features->load_balanced_dist) {
+                targets[mmsg_cnt] = (struct s_target*)hash_based_output(
+                        CREATE_HT_KEY((struct sockaddr_storage*)(&source_addresses[mmsg_cnt])), td);
             }
+            //else
+            //    // TODO: implement the case when round robin lb is enabled, i.e., neither hash_based_dist nor load_balanced_dist are enabled
+            //    targets[mmsg_cnt] = &(td->targets[td->thread_id]);
 
-            target = ht_e->target;
-            target_addr = (struct sockaddr_in*)&(target->dest);
-        }
-        */
+            if (features->load_balanced_dist) {
+                ht_elements[mmsg_cnt] = (struct s_hashable*) ht_get_add(hashtable,
+                        CREATE_HT_KEY((struct sockaddr_storage*)(&source_addresses[mmsg_cnt])),
+                        (struct sockaddr_storage*)(&source_addresses[mmsg_cnt]),
+                        targets[mmsg_cnt], 0, 0, 0);
 
-        /*
+                if (ht_elements[mmsg_cnt] == NULL) {
+                    fprintf(stderr, "%lu - ERROR: listener %d: Error while adding element to hashtable\n",
+                            time(NULL), td->thread_id);
+                    exit(1);
+                }
+
+                targets[mmsg_cnt] = ht_elements[mmsg_cnt]->target;
+            }
 #if defined(HASH_DEBUG)
-        if (features->hash_based_dist || features->load_balanced_dist) {
-            smp_mb__before_atomic();
-            fprintf(stderr, "%lu - listener %d: hash result for addr: target: %s:%u (count: %lu)\n",
-                    time(NULL),
-                    td->thread_id,
-                    get_ip((struct sockaddr_storage *)target_addr, addrbuf0),
-                    get_port((struct sockaddr_storage *)target_addr),
-                    atomic_read(&(ht_e->itemcnt)));
-        }
+            if (features->hash_based_dist || features->load_balanced_dist) {
+                target_addr = (struct sockaddr_in*)&(targets[mmsg_cnt]->dest);
+                smp_mb__before_atomic();
+                fprintf(stderr, "%lu - listener %d: hash result for %s: %s:%u (count: %lu)\n",
+                        time(NULL),
+                        td->thread_id,
+                        get_ip((struct sockaddr_storage *)(&source_addresses[mmsg_cnt]), addrbuf0),
+                        get_ip((struct sockaddr_storage *)target_addr, addrbuf1),
+                        get_port((struct sockaddr_storage *)target_addr),
+                        atomic_read(&(ht_elements[mmsg_cnt]->itemcnt)));
+            }
 #endif
-        */
-
-        /*
-         * update packet headers
-         *
-        update_udp_header(udph, numbytes,
-                ((struct sockaddr_in*)&source_addr)->sin_port,
-                target_addr->sin_port);
-
-        update_ip_header(iph, sizeof(struct udphdr) + numbytes,
-                         ((struct sockaddr_in*)&source_addr)->sin_addr.s_addr,
-                         target_addr->sin_addr.s_addr);
+            /* set destination address and destination port for this target */
+            update_ip_header(get_ip_hdr(header_bufs[mmsg_cnt]),
+                    sizeof(struct udphdr) + iovecs[mmsg_cnt][IOVEC_PAYLOAD].iov_len,
+                    ((struct sockaddr_in)(source_addresses[mmsg_cnt])).sin_addr.s_addr,
+                    (*(struct sockaddr_in*)&(targets[mmsg_cnt]->dest)).sin_addr.s_addr);
+            update_udp_header(get_udp_hdr(header_bufs[mmsg_cnt]),
+                    iovecs[mmsg_cnt][IOVEC_PAYLOAD].iov_len,
+                    ((struct sockaddr_in)(source_addresses[mmsg_cnt])).sin_port,
+                    (*(struct sockaddr_in*)&(targets[mmsg_cnt]->dest)).sin_port);
 
 #ifdef DEBUG_SOCKETS
-        fprintf(stderr, "%lu - listener %d: got packet from %s:%d\n",
-            time(NULL),
-            td->thread_id,
-            get_ip(&source_addr, addrbuf0),
-            get_port(&source_addr));
-        fprintf(stderr, "%lu - listener %d: packet is %d bytes long\n",
-                time(NULL), td->thread_id, numbytes);
-        fprintf(stderr, "%lu - listener %d: sending packet: %s:%u => %s:%u: len: %u\n",
-            time(NULL),
-            td->thread_id,
-            get_ip4_uint(iph->saddr, addrbuf0),
-            get_port4_uint(udph->source),
-            get_ip4_uint(iph->daddr, addrbuf1),
-            get_port4_uint(udph->dest),
-            iph->tot_len);
+            fprintf(stderr, "%lu - listener %d: sending packet: %s:%u => %s:%u: len: %lu\n",
+                time(NULL),
+                td->thread_id,
+                get_ip4_uint(
+                    ((struct sockaddr_in)(source_addresses[mmsg_cnt])).sin_addr.s_addr,
+                    addrbuf0),
+                get_port4_uint(
+                    ((struct sockaddr_in)(source_addresses[mmsg_cnt])).sin_port),
+                get_ip4_uint(
+                    (*(struct sockaddr_in*)&(targets[mmsg_cnt]->dest)).sin_addr.s_addr,
+                    addrbuf1),
+                get_port4_uint(
+                    (*(struct sockaddr_in*)&(targets[mmsg_cnt]->dest)).sin_port),
+                iovecs[mmsg_cnt][IOVEC_PAYLOAD].iov_len);
 #endif
-        */
+        } /* for (mmsg_cnt = 0; mmsg_cnt < recvmmsg_retval; mmsg_cnt++) */
 
-        /*
-         * send packets
-         *
-        int32_t written;
-        if ((written = sendto(target->fd, datagram, iph->tot_len, 0, (struct sockaddr *) target_addr, sizeof(*target_addr))) < 0) {
-            perror("sendto failed");
-            fprintf(stderr, "%lu - listener %d: error in write %s - %d\n", time(NULL), td->thread_id, strerror(errno), errno);
-        }
-        else {
-            if (features->load_balanced_dist) {
-                // NOTE: need atomic_inc for target-cnt as it is shared between all threads
-
-                smp_mb__before_atomic();
-                if (features->lb_bytecnt_based) {
-                    // update per source bytecnt
-                    atomic_add(written, &(ht_e->itemcnt));
-                    // update per target bytetcnt
-                    atomic_add(written, &(target->itemcnt));
+        sendmmsg_retval = send_mmsg(td, msgs, recvmmsg_retval, td->thread_id);
+        if (sendmmsg_retval > 0) {
+            // NOTE: need atomic_inc for target-cnt as it is shared between all threads
+            smp_mb__before_atomic();
+            /* check message flags for errors during sending */
+            for (uint16_t i = 0; i < sendmmsg_retval; i++) {
+                if (msgs[i].msg_hdr.msg_flags == 0) {
+                    if (features->lb_bytecnt_based) {
+                        // update per source bytecnt
+                        atomic_add(iovecs[i][IOVEC_PAYLOAD].iov_len,
+                                &(ht_elements[i]->itemcnt));
+                        // update per target bytetcnt
+                        atomic_add(iovecs[i][IOVEC_PAYLOAD].iov_len,
+                                &(targets[i]->itemcnt));
+                    }
+                    else {
+                        // update per source packetcnt
+                        atomic_inc(&(ht_elements[i]->itemcnt));
+                        // update per target packetcnt
+                        atomic_inc(&(targets[i]->itemcnt));
+                    }
                 }
-                else {
-                    // update per source packetcnt
-                    atomic_inc(&(ht_e->itemcnt));
-                    // update per target packetcnt
-                    atomic_inc(&(target->itemcnt));
-                }
-                smp_mb__after_atomic();
             }
-
-	    if ( written != iph->tot_len) {
-		// handle this short write - log and move on
-#ifdef LOG_ERROR
-		fprintf(stderr, "%lu - ERROR: listener %d: short write: sent packet: %s:%u => %s:%u: len: %u written: %d\n",
-		    time(NULL),
-		    td->thread_id,
-		    get_ip4_uint(iph->saddr, addrbuf0),
-		    get_port4_uint(udph->source),
-		    get_ip4_uint(iph->daddr, addrbuf1),
-		    get_port4_uint(udph->dest),
-		    iph->tot_len, written);
-#endif
-	    }
+            smp_mb__after_atomic();
         }
-        */
+
+        /* prepare packet buffer for next read */
+        reset_mmsg_buffers(msgs, iovecs, source_addresses, recvmmsg_retval);
     } /* while (run_flag) */
 
 #ifdef LOG_INFO
