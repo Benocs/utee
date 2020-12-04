@@ -253,6 +253,14 @@ int main(int argc, char *argv[]) {
     for (cnt = 0; cnt < num_threads; cnt++) {
         switch (mode) {
             case 'r':
+                if (num_threads > num_targets) {
+#ifdef LOG_ERROR
+                    fprintf(stderr, "%lu - ERROR: in load_balance mode, "
+                            "num_threads cannot be bigger than num_target\n",
+                            time(NULL));
+#endif
+                    return 1;
+                }
                 pthread_create(&thread[cnt], NULL, &load_balance, (void *) &tds[cnt]);
             break;
             case 'd':
