@@ -56,7 +56,11 @@
 void usage(int argc, char *argv[]) {
     fprintf(stderr, "usage: %s -l <listenaddr:port> -m <r|d> -n <num_threads> "
                     "[-s <batch size>] "
-                    "[-H] [-L] <targetaddr:port> [targetaddr:port [...]]\n"
+                    "[-p <socket buffer size>] "
+                    "[-H] [-L] "
+                    "[-b] [-i <load_balance_update_interval_bytes>] "
+                    "[-t <inter-target threshold>"
+                    "<targetaddr:port> [targetaddr:port [...]]\n"
                     "\tNote: num_threads must be >= number of target "
                     "addresses\n\n"
                     "repository revision: %s\n"
@@ -166,7 +170,7 @@ int main(int argc, char *argv[]) {
         case 'i':
             threshold = strtoul(optarg, NULL, 10);
 #ifdef LOG_INFO
-            fprintf(stderr, "%lu - load balance every: %lu bytes\n",
+            fprintf(stderr, "%lu - load balance every: %lu bytes or packets\n",
                     time(NULL), threshold);
 #endif
         break;
