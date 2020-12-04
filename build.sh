@@ -32,7 +32,7 @@ hash_flags="-DHASH_ADDR=HASH_MOD -DHASH_FUNCTION=HASH_JEN"
 #
 # optional feature switches
 #
-extraflags="-DUSE_SELECT_WRITE"
+extraflags=
 
 #
 # debug flags
@@ -40,8 +40,10 @@ extraflags="-DUSE_SELECT_WRITE"
 debugflags=
 #debugflags="-DDEBUG"
 #debugflags="-DDEBUG -DDEBUG_VERBOSE"
+#debugflags="-DDEBUG -DDEBUG_VERBOSE -DHASH_DEBUG"
 #debugflags="-DDEBUG -DDEBUG_VERBOSE -DHASH_DEBUG -DDEBUG_SOCKETS"
 #debugflags="-DDEBUG -DDEBUG_VERBOSE -DHASH_DEBUG -DDEBUG_SOCKETS -DLOAD_BALANCE_DEBUG"
+#debugflags="-DDEBUG -DDEBUG_VERBOSE -DHASH_DEBUG -DLOAD_BALANCE_DEBUG"
 
 #
 # (debug) build
