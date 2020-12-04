@@ -227,8 +227,14 @@ void ht_reset_counters(struct s_hashable *ht);
 
 void ht_delete_all(struct s_hashable *ht);
 
+/*
+ * main function for load balancing mode
+ */
 void *load_balance(void *arg0);
 
+/*
+ * main function for tee mode
+ */
 void *tee(void *arg0);
 
 int setsocksize(int s, int level, int optname, void *optval, socklen_t optlen);
