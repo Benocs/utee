@@ -1177,7 +1177,6 @@ void update_load_balance(struct s_thread_data* tds, uint8_t num_threads,
     uint16_t itcnt;
     uint8_t cnt;
     uint8_t hit_reordering_threshold = 0;
-    uint8_t did_reordering = 0;
 
     struct s_hashable* ht_e_best = NULL;
 
@@ -1484,11 +1483,6 @@ void update_load_balance(struct s_thread_data* tds, uint8_t num_threads,
             // refresh counters
             per_target_item_cnt[target_max_idx] -= atomic_read(&(ht_e_best->itemcnt));
             per_target_item_cnt[target_min_idx] += atomic_read(&(ht_e_best->itemcnt));
-
-            /* Mark that high hitters have been shifted and
-             * that there's a new hashtable available.
-             */
-            did_reordering = 1;
         }
     } // end of for (itcnt = 0; itcnt < MAXOPTIMIZATIONITERATIONS; itcnt++) {
 
@@ -1513,18 +1507,15 @@ void update_load_balance(struct s_thread_data* tds, uint8_t num_threads,
     // reset all counters in next hashtable
     ht_reset_counters(*master_hashtable);
 
-    /* only update master hashtable if it was changed */
-    if (did_reordering) {
 #if defined(LOG_INFO)
-        fprintf(stderr, "%lu - new hashtable:\n", time(NULL));
-        ht_iterate(*master_hashtable);
-        fprintf(stderr, "\n");
+    fprintf(stderr, "%lu - new hashtable:\n", time(NULL));
+    ht_iterate(*master_hashtable);
+    fprintf(stderr, "\n");
 #endif
-        // delete last ro-hashtable and set next ro-hashtable
-        for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
-            ht_delete_all(tds[cnt].hashtable_ro_old);
-            ht_copy(*master_hashtable, &(tds[cnt].hashtable_ro));
-        }
+    // delete last ro-hashtable and set next ro-hashtable
+    for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
+        ht_delete_all(tds[cnt].hashtable_ro_old);
+        ht_copy(*master_hashtable, &(tds[cnt].hashtable_ro));
     }
     // reset all thread counters
     for (cnt = 0; cnt < tds[0].num_targets; cnt++ ) {
@@ -1536,16 +1527,14 @@ void update_load_balance(struct s_thread_data* tds, uint8_t num_threads,
     *master_hashtable = NULL;
 
     /* only update master hashtable if it was changed */
-    if (did_reordering) {
-        // increase hashtable version to signal threads that a new version is available
-        smp_mb__before_atomic();
-        atomic_inc(&master_hashtable_idx);
-        smp_mb__after_atomic();
+    // increase hashtable version to signal threads that a new version is available
+    smp_mb__before_atomic();
+    atomic_inc(&master_hashtable_idx);
+    smp_mb__after_atomic();
 #if defined(DEBUG)
-        fprintf(stderr, "%lu - len(master_hashtable) after swapping to ro: %u\n",
-                time(NULL), HASH_COUNT(*master_hashtable));
+    fprintf(stderr, "%lu - len(master_hashtable) after swapping to ro: %u\n",
+            time(NULL), HASH_COUNT(*master_hashtable));
 #endif
-    }
     fprintf(stderr, "\n%lu ==========  load balance update finished ==========\n",
             time(NULL));
 }
