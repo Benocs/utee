@@ -59,7 +59,7 @@ void usage(int argc, char *argv[]) {
                     "[-p <socket buffer size>] "
                     "[-H] [-L] "
                     "[-b] [-i <load_balance_update_interval_bytes>] "
-                    "[-t <inter-target threshold>"
+                    "[-t <inter-target threshold>] "
                     "<targetaddr:port> [targetaddr:port [...]]\n"
                     "\tNote: num_threads must be >= number of target "
                     "addresses\n\n"
