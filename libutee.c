@@ -1572,3 +1572,105 @@ void sig_handler_ignore(int signum) {
 #endif
 }
 
+void dump_active_sources(
+        const char* active_sources_fname,
+        struct s_hashable* master_hashtable,
+        struct s_hashable** active_sources_hashtable,
+        uint64_t max_age) {
+
+    /* convert from "${fname}" to ".${fname}.tmp" needs +5 chars */
+    static uint8_t temp_fname_extra_len = 5;
+    char active_sources_temp_fname[MAX_FNAME_LEN+temp_fname_extra_len];
+    uint16_t fname_len = strlen(active_sources_fname);
+    int fd;
+    FILE* fp;
+    struct s_hashable *s;
+    char addrbuf[INET6_ADDRSTRLEN];
+
+    /* Iterate over sources in local hashmap and increase last seen counters
+     * by one for all entries. */
+    for (s=*active_sources_hashtable; s != NULL; s=s->hh.next) {
+        atomic_inc(&(s->itemcnt));
+
+        if (atomic_read(&(s->itemcnt)) > max_age) {
+            // remove source from hashtable
+            ht_delete(*active_sources_hashtable, s);
+        }
+    }
+
+    /* Copy sources from master hashtable that are currently active. */
+    smp_mb__before_atomic();
+    for (s=master_hashtable; s != NULL; s=s->hh.next) {
+        ht_get_add(active_sources_hashtable,
+                s->key,
+                &(s->source),
+                // albeit not used here, still set the correct target to not
+                // confuse existing code/functions/data structures
+                s->target,
+                // last active: now
+                0,
+                // overwrite if key (source) exists
+                1,
+                // do not sum active counters if key (source) exists
+                0);
+    }
+
+    if (fname_len > MAX_FNAME_LEN) {
+        fname_len = MAX_FNAME_LEN;
+    }
+
+    char* fname_tmpcopy_path = strndup(active_sources_fname, fname_len);
+    char* fname_tmpcopy_file = strndup(active_sources_fname, fname_len);
+    char* dname = dirname(fname_tmpcopy_path);
+    char* fname = basename(fname_tmpcopy_file);
+
+    /* assemble temporary file name by converting
+     * from "${dirname}/${fname}" to "${dirname}/.${fname}.tmp": +5 chars */
+    strncpy(active_sources_temp_fname, dname, strlen(dname)+1);
+    strncat(active_sources_temp_fname, "/.", 2+1);
+    strncat(active_sources_temp_fname, fname, strlen(fname)+1);
+    strncat(active_sources_temp_fname, ".tmp", 4+1);
+    fprintf(stderr, "assembled temp file name: %s\n", active_sources_temp_fname);
+
+    fd = open(active_sources_temp_fname, O_WRONLY | O_CREAT | O_TRUNC, 0200);
+    if (fd < 0) {
+        fprintf(stderr, "%lu - [dump_active_sources] cannot open temporary file: %d\n",
+                time(NULL), errno);
+        goto dump_active_sources_exit;
+    }
+    fp = fdopen(fd, "w");
+    if (fp == NULL) {
+        fprintf(stderr, "%lu - [dump_active_sources] cannot open temporary file: %d\n",
+                time(NULL), errno);
+        goto dump_active_sources_exit;
+    }
+
+    for(s=*active_sources_hashtable; s != NULL; s=s->hh.next) {
+        fprintf(fp, "%s\t%lu\n",
+                get_ip(&(s->source), addrbuf),
+                atomic_read(&(s->itemcnt)));
+    }
+
+    /* The fclose() function will (also) perform a close() on the file descriptor. */
+    if (fclose(fp) != 0) {
+        fprintf(stderr, "%lu - [dump_active_sources] cannot close temporary file: %d\n",
+                time(NULL), errno);
+        goto dump_active_sources_exit;
+    }
+
+    if (chmod(active_sources_temp_fname, 0644) < 0) {
+        fprintf(stderr, "%lu - [dump_active_sources] cannot chmod temporary file: %d\n",
+                time(NULL), errno);
+        goto dump_active_sources_exit;
+    }
+
+    if (rename(active_sources_temp_fname, active_sources_fname) < 0) {
+        fprintf(stderr, "%lu - [dump_active_sources] cannot rename temporary file: %d\n",
+                time(NULL), errno);
+        goto dump_active_sources_exit;
+    }
+
+dump_active_sources_exit:
+    free(fname_tmpcopy_path);
+    free(fname_tmpcopy_file);
+}

@@ -38,6 +38,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <libgen.h>
 #include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -49,6 +51,7 @@
 #include <signal.h>
 #include <pthread.h>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
 #include <linux/sockios.h>
 #include <time.h>
 
@@ -75,6 +78,7 @@
 #define BUFLEN 4096
 #define MAXTHREADS 255
 #define MAXOPTIMIZATIONITERATIONS 500
+#define MAX_FNAME_LEN 4096
 
 #define HASH_MOD(key, keylen, num_bkts, hashv, bkt)                           \
 do {                                                                          \
@@ -254,11 +258,21 @@ int open_listener_socket(char* laddr, int lport, uint32_t pipe_size);
 
 void update_load_balance(struct s_thread_data* tds, uint8_t num_threads,
         uint64_t threshold, double reorder_threshold,
+        uint8_t dump_active_sources_enabled,
+        const char* active_sources_fname,
+        uint64_t active_sources_max_age,
+        struct s_hashable** active_sources_hashtable,
         struct s_hashable** master_hashtable);
 
 void sig_handler_toggle_optional_output(int signum);
 void sig_handler_shutdown(int signum);
 void sig_handler_ignore(int signum);
+
+void dump_active_sources(
+                const char* active_sources_fname,
+                struct s_hashable* master_hashtable,
+                struct s_hashable** active_sources_hashtable,
+                uint64_t max_age);
 
 // variables that are changed when a signal arrives
 extern volatile uint8_t optional_output_enabled;
