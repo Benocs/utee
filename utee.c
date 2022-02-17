@@ -60,6 +60,8 @@ void usage(int argc, char *argv[]) {
                     "[-H] [-L] "
                     "[-b] [-i <load_balance_update_interval_bytes>] "
                     "[-t <inter-target threshold>] "
+                    "[-f <active sources output file>] "
+                    "[-a <max age of active sources. default=10> "
                     "<targetaddr:port> [targetaddr:port [...]]\n"
                     "\tNote: num_threads must be >= number of target "
                     "addresses\n\n"
@@ -91,6 +93,7 @@ int main(int argc, char *argv[]) {
     uint8_t loadbalance_bytecnt_based = 0;
 
     struct s_hashable* master_hashtable = NULL;
+    struct s_hashable* active_sources_hashtable = NULL;
 
     // default: load balance every 50e6 lines, min difference between targets: 10%
     uint64_t threshold = 50e6;
@@ -102,14 +105,43 @@ int main(int argc, char *argv[]) {
     uint8_t num_targets;
     uint16_t batch_size = 1024;
 
+    /* filename to store statistics about active sources in */
+    char active_sources_fname[MAX_FNAME_LEN];
+    uint64_t active_sources_max_age = 10;
+    uint8_t dump_active_sources = 0;
+
     int c;
 
     atomic_set(&master_hashtable_idx, 0);
     smp_mb__after_atomic();
 
     opterr = 0;
-    while ((c = getopt (argc, argv, "l:m:n:i:p:s:t:LHb")) != -1)
+    while ((c = getopt (argc, argv, "a:f:l:m:n:i:p:s:t:LHb")) != -1)
     switch (c) {
+        case'a':
+            active_sources_max_age = strtoul(optarg, NULL, 10);
+#ifdef LOG_INFO
+            fprintf(stderr, "%lu - setting max age for active sources to: %lu\n",
+                    time(NULL), active_sources_max_age);
+#endif
+        break;
+        case 'f':
+            if (strlen(optarg) >= sizeof(active_sources_fname)-1) {
+                fprintf(stderr, "%lu - ERROR active sources output filename "
+                        "exceeds maximum length\n",
+                        time(NULL));
+                exit(1);
+            }
+
+            printf("strlen(optarg): %lu\n", strlen(optarg));
+            strncpy(active_sources_fname, optarg,
+                    sizeof(active_sources_fname)-1);
+            dump_active_sources = 1;
+#ifdef LOG_INFO
+            fprintf(stderr, "%lu - dump list of active sources to: %s\n",
+                    time(NULL), active_sources_fname);
+#endif
+        break;
         case 'l':
             split_addr(optarg, listenaddr, &listenport);
 #ifdef LOG_INFO
@@ -278,6 +310,9 @@ int main(int argc, char *argv[]) {
 
         if (loadbalanced_dist_enabled) {
             update_load_balance(tds, num_threads, threshold, reorder_threshold,
+                    dump_active_sources, (const char*)active_sources_fname,
+                    active_sources_max_age,
+                    &active_sources_hashtable,
                     &master_hashtable);
         }
 

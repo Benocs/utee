@@ -1175,6 +1175,9 @@ int open_listener_socket(char* laddr, int lport, uint32_t pipe_size) {
 
 void update_load_balance(struct s_thread_data* tds, uint8_t num_threads,
         uint64_t threshold, double reorder_threshold,
+        uint8_t dump_active_sources_enabled, const char* active_sources_fname,
+        uint64_t active_sources_max_age,
+        struct s_hashable** active_sources_hashtable,
         struct s_hashable** master_hashtable) {
 
     struct s_hashable *s;
@@ -1527,6 +1530,16 @@ void update_load_balance(struct s_thread_data* tds, uint8_t num_threads,
         atomic_set(&(tds[0].targets[cnt].itemcnt), 0);
     }
     smp_mb__after_atomic();
+
+    /* dump active sources if that feature is enabled */
+    if (dump_active_sources_enabled) {
+        dump_active_sources(
+                active_sources_fname,
+                *master_hashtable,
+                active_sources_hashtable,
+                active_sources_max_age);
+    }
+
     ht_delete_all(*master_hashtable);
     // release master pointer to next hashtable
     *master_hashtable = NULL;
