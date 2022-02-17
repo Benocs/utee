@@ -1,6 +1,6 @@
 /* utee - transparent udp tee proxy
  *
- * Copyright (C) 2016-2020 Benocs
+ * Copyright (C) 2016-2022 Benocs
  * Author: Robert Wuttke <robert@benocs.com>
  *
  * This program is free software; you can redistribute it and/or
@@ -19,7 +19,7 @@
  *
  * support for:
  *  * round-robin load-balance
- *  ** hash-based load-balance
+ *  * hash-based load-balance
  *  * duplicate/relay
  *
  * based on:
@@ -170,7 +170,7 @@ struct s_thread_data {
     atomic_t last_used_master_hashtable_idx;
 };
 
-unsigned short checksum (unsigned short *buf, int nwords);
+unsigned short checksum(unsigned short *buf, int nwords);
 
 // get sockaddr, IPv4 or IPv6:
 void *get_in_addr(struct sockaddr_storage *sa);

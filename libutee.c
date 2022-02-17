@@ -1,6 +1,6 @@
 /* utee - transparent udp tee proxy
  *
- * Copyright (C) 2016-2020 Benocs
+ * Copyright (C) 2016-2022 Benocs
  * Author: Robert Wuttke <robert@benocs.com>
  *
  * This program is free software; you can redistribute it and/or
@@ -19,7 +19,7 @@
  *
  * support for:
  *  * round-robin load-balance
- *  ** hash-based load-balance
+ *  * hash-based load-balance
  *  * duplicate/relay
  *
  * based on:
