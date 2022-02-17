@@ -261,10 +261,10 @@ int main(int argc, char *argv[]) {
 #endif
                     return 1;
                 }
-                pthread_create(&thread[cnt], NULL, &load_balance, (void *) &tds[cnt]);
+                pthread_create(&thread[cnt], NULL, &utee_load_balance, (void *) &tds[cnt]);
             break;
             case 'd':
-                pthread_create(&thread[cnt], NULL, &tee, (void *) &tds[cnt]);
+                pthread_create(&thread[cnt], NULL, &utee_tee, (void *) &tds[cnt]);
             break;
         }
     }

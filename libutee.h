@@ -232,12 +232,12 @@ void ht_delete_all(struct s_hashable *ht);
 /*
  * main function for load balancing mode
  */
-void *load_balance(void *arg0);
+void *utee_load_balance(void *arg0);
 
 /*
  * main function for tee mode
  */
-void *tee(void *arg0);
+void *utee_tee(void *arg0);
 
 int setsocksize(int s, int level, int optname, void *optval, socklen_t optlen);
 

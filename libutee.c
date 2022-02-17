@@ -682,7 +682,7 @@ uint8_t reset_mmsg_buffers(
  * load balance mmsg
  *
  */
-void *load_balance(void *arg0) {
+void *utee_load_balance(void *arg0) {
     struct s_thread_data *td = (struct s_thread_data *)arg0;
     struct s_features *features = &(td->features);
     struct s_hashable** hashtable = &(td->hashtable);
@@ -897,7 +897,7 @@ void *load_balance(void *arg0) {
  *
  */
 
-void *tee(void *arg0) {
+void *utee_tee(void *arg0) {
     struct s_thread_data *td = (struct s_thread_data *)arg0;
     struct s_features *features = &(td->features);
 
