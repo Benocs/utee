@@ -225,6 +225,8 @@ void ht_copy(struct s_hashable *ht_from, struct s_hashable **ht_to);
 
 void ht_reset_counters(struct s_hashable *ht);
 
+void ht_delete(struct s_hashable *ht, struct s_hashable *ht_e);
+
 void ht_delete_all(struct s_hashable *ht);
 
 /*

@@ -459,6 +459,11 @@ void ht_reset_counters(struct s_hashable *ht) {
     smp_mb__after_atomic();
 }
 
+void ht_delete(struct s_hashable *ht, struct s_hashable *ht_e) {
+    HASH_DEL(ht, ht_e);
+    free(ht_e);
+}
+
 void ht_delete_all(struct s_hashable *ht) {
     struct s_hashable *s, *tmp;
 
