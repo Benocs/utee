@@ -1643,7 +1643,6 @@ void dump_active_sources(
     strncat(active_sources_temp_fname, "/.", 2+1);
     strncat(active_sources_temp_fname, fname, strlen(fname)+1);
     strncat(active_sources_temp_fname, ".tmp", 4+1);
-    fprintf(stderr, "assembled temp file name: %s\n", active_sources_temp_fname);
 
     fd = open(active_sources_temp_fname, O_WRONLY | O_CREAT | O_TRUNC, 0200);
     if (fd < 0) {

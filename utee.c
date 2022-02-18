@@ -133,7 +133,6 @@ int main(int argc, char *argv[]) {
                 exit(1);
             }
 
-            printf("strlen(optarg): %lu\n", strlen(optarg));
             strncpy(active_sources_fname, optarg,
                     sizeof(active_sources_fname)-1);
             dump_active_sources = 1;
